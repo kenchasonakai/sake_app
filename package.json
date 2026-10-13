@@ -1,0 +1,27 @@
+{
+  "name": "sake-app",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "api": "pnpm --filter @sake/api",
+    "mobile": "pnpm --filter @sake/mobile",
+    "shared": "pnpm --filter @sake/shared"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.8",
+    "typescript": "~6.0.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd"
+    ]
+  }
+}

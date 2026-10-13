@@ -1,0 +1,28 @@
+node_modules/
+dist/
+.turbo/
+*.log
+.DS_Store
+
+# Cloudflare (cf / wrangler)
+.cloudflare/
+.wrangler/
+.dev.vars*
+!.dev.vars.example
+
+# env
+.env
+.env.*
+!.env.example
+
+# Expo
+.expo/
+expo-env.d.ts
+ios/
+android/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
