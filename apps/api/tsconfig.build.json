@@ -4,8 +4,10 @@
     "noEmit": false,
     "declaration": true,
     "emitDeclarationOnly": true,
-    "outDir": "dist/types",
-    "rootDir": "src"
+    "outDir": "dist/types"
   },
-  "include": ["src", ".cloudflare/types"]
+  "include": [
+    "src",
+    ".cloudflare/types"
+  ]
 }

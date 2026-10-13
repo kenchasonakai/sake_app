@@ -3,10 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "types": "./dist/types/index.d.ts",
+  "types": "./dist/types/src/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/types/index.d.ts"
+      "types": "./dist/types/src/index.d.ts"
     }
   },
   "scripts": {
