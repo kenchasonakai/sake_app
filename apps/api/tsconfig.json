@@ -1,7 +1,9 @@
 {
   "compilerOptions": {
     "target": "es2024",
-    "lib": ["es2024"],
+    "lib": [
+      "es2024"
+    ],
     "module": "preserve",
     "moduleResolution": "bundler",
     "types": [],
@@ -10,7 +12,14 @@
     "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx"
   },
-  "include": ["src", "cloudflare.config.ts", "drizzle.config.ts", ".cloudflare/types"]
+  "include": [
+    "src",
+    "cloudflare.config.ts",
+    "drizzle.config.ts",
+    ".cloudflare/types"
+  ]
 }
