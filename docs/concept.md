@@ -89,6 +89,6 @@
 ## 10. 役割分担（技術）
 
 - Web とアプリは最終的にどちらもフル機能。Web があるのは、ギフトを探す段階でアプリを入れさせないため
-- 最初はアプリ本体（apps/mobile）と、Web の受け取りリンク（apps/api の `/g/:token`。OGP 付き、アプリ不要）だけを作る
-- 「探す・贈る」の Web 版は、Expo アプリの Web 出力を API と同じ Worker から配信する形で後から足す
+- 最初はアプリ本体（apps/mobile）と、Web の受け取りリンク（apps/web の `/g/:token`。OGP 付き、アプリ不要）だけを作る
+- 「探す・贈る」の Web 版は、Expo アプリの Web 出力を apps/web の Worker から配信する形で後から足す。API は API のまま
 - API（apps/api）: 候補の選定、ギフト、注文、記録。アプリと Web はどちらもこの API を使う

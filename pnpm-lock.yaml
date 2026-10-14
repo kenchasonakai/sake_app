@@ -143,6 +143,34 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
+  apps/web:
+    dependencies:
+      '@sake/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      hono:
+        specifier: ^4.13.13
+        version: 4.13.13
+    devDependencies:
+      '@cloudflare/vite-plugin':
+        specifier: 2.0.0-beta.sha-8c6014f9a
+        version: 2.0.0-beta.sha-8c6014f9a(@types/node@26.6.5)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))(workerd@1.20261006.1)
+      '@sake/api':
+        specifier: workspace:*
+        version: link:../api
+      cf:
+        specifier: ^1.0.0-beta.16
+        version: 1.0.0-beta.16(@types/node@26.6.5)
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+      vite:
+        specifier: ^8.3.0
+        version: 8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)
+      wrangler:
+        specifier: ^4.150.0
+        version: 4.150.0(@types/node@26.6.5)
+
   packages/shared:
     dependencies:
       zod:

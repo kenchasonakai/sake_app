@@ -1,0 +1,28 @@
+{
+  "name": "@sake/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "cf dev",
+    "build": "cf build",
+    "deploy": "cf deploy --mode production",
+    "deploy:staging": "cf deploy --mode staging",
+    "types": "cf workers types",
+    "typecheck": "cf workers types && tsc",
+    "logs": "wrangler tail sake-web",
+    "logs:staging": "wrangler tail sake-web-staging"
+  },
+  "dependencies": {
+    "@sake/shared": "workspace:*",
+    "hono": "^4.13.13"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "2.0.0-beta.sha-8c6014f9a",
+    "@sake/api": "workspace:*",
+    "cf": "^1.0.0-beta.16",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.0",
+    "wrangler": "^4.150.0"
+  }
+}
