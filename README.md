@@ -2,6 +2,15 @@
 
 日本酒の記録アプリ。TypeScript のみで iOS / Android 両対応（Mac なし前提）。
 
+## 設計ドキュメント
+
+- [docs/concept.md](docs/concept.md) コンセプト
+- [docs/architecture.md](docs/architecture.md) ディレクトリ設計と URL 設計
+- [docs/auth.md](docs/auth.md) 認証・認可
+- [docs/data-model.md](docs/data-model.md) テーブル設計
+- [docs/design-discussion.md](docs/design-discussion.md) UI を決める前の論点
+- [CLAUDE.md](CLAUDE.md) 次の実装者向けの入口と実装の順番
+
 ## 構成
 
 | ディレクトリ | 役割 | 主要技術 |
