@@ -49,6 +49,7 @@ sake_app/
 apps/api/
 ├─ cloudflare.config.ts     mode（development / staging / production）ごとの Worker 定義
 ├─ drizzle/                 マイグレーション SQL。drizzle-kit generate の出力で、手で編集しない
+├─ seed/bottles.json       カタログ。ここを直して流し込む（D28）
 └─ src/
    ├─ index.ts              組み立てだけ。/api と /internal を束ね、AppType と InternalType を export
    ├─ routes/
@@ -56,10 +57,9 @@ apps/api/
    │  │  ├─ bottles.ts      カタログの参照
    │  │  ├─ recommendations.ts  候補の計算（ログイン不要、保存しない）
    │  │  ├─ gifts.ts        贈ったギフトの作成、一覧、詳細、リンクの再表示と作り直し、キャンセル
-   │  │  ├─ received.ts     もらったギフトの一覧、紐づけ、開けたよ
+   │  │  ├─ received.ts     もらったギフトの一覧、紐づけ
    │  │  ├─ tastings.ts     記録
-   │  │  ├─ me.ts           自分の情報、表示名
-   │  │  └─ admin.ts        運営用（O4）
+   │  │  └─ me.ts           自分の情報、表示名、開けたよの設定
    │  └─ internal/          /internal/* 。Web の Worker だけが呼ぶ
    │     └─ claims.ts       受け取りページの表示用データ、住所の送信
    ├─ services/             業務ロジック。Hono に依存しない関数。テストはここに書く
@@ -67,11 +67,10 @@ apps/api/
    │  ├─ gifts.ts           作成、状態、期限、リンクの作り直し、キャンセル
    │  ├─ claims.ts          トークン検証、住所の保存、手配の作成
    │  ├─ linking.ts         受け取る人のアカウントへの紐づけ（2 経路）
-   │  ├─ tastings.ts        記録と開けたよ
-   │  └─ fulfillment.ts     手配の状態を運営画面から進める（D14）
+   │  └─ tastings.ts        記録。もらった一本の初回は開けたよを自動で送る（D4）
    ├─ db/
    │  ├─ index.ts
-   │  └─ schema/            auth.ts、catalog.ts、gifts.ts、fulfillment.ts、tastings.ts、devices.ts
+   │  └─ schema/            auth.ts、catalog.ts、gifts.ts、fulfillment.ts、tastings.ts
    ├─ auth/index.ts         Better Auth（メール OTP、Expo プラグイン、drizzle アダプタ）
    ├─ middleware/
    │  ├─ session.ts         セッションを c.var.user に載せる
@@ -105,11 +104,9 @@ apps/api/
 | POST | /api/gifts/:id/cancel | 必要（贈った本人） | キャンセル。受け取られる前だけ |
 | GET | /api/received | 必要 | 自分に紐づいたもらったギフト |
 | POST | /api/received/link | 必要 | 受け取りリンクを貼って紐づける |
-| POST | /api/received/:giftId/opened | 必要（紐づいた本人） | 開けたよを 1 回だけ送る |
-| GET、POST | /api/tastings | 必要 | 自分の記録の一覧、作成。作成時に開けたよを一緒に送れる |
+| GET、POST | /api/tastings | 必要 | 自分の記録の一覧、作成。もらった一本に初めて書いた時、設定がオンなら開けたよを自動で送る |
 | GET、PATCH、DELETE | /api/tastings/:id | 必要（本人） | |
-| GET、PATCH | /api/me | 必要 | 自分の情報、既定の表示名 |
-| * | /api/admin/* | admin | 手配の一覧と更新（O4） |
+| GET、PATCH | /api/me | 必要 | 自分の情報、既定の表示名、開けたよの設定 |
 
 `/internal/*`（Web の Worker だけ）:
 
@@ -146,7 +143,7 @@ apps/mobile/src/
 │  ├─ (tabs)/
 │  │  ├─ index.tsx          ホーム。贈る入口と、贈ったギフトの状況
 │  │  ├─ records.tsx        記録。もらった一本もここに出る
-│  │  └─ settings.tsx       アカウント、表示名
+│  │  └─ settings.tsx       アカウント、表示名、開けたよを送る
 │  ├─ gift/
 │  │  ├─ new.tsx            G2 場面と予算
 │  │  ├─ candidates.tsx     G3 候補。1 枚ずつめくる
@@ -156,7 +153,7 @@ apps/mobile/src/
 │  │  └─ [id]/index.tsx     G8 状況
 │  ├─ received/
 │  │  ├─ add.tsx            リンクを貼って紐づけ
-│  │  └─ [id].tsx           もらった一本と開けたよ
+│  │  └─ [id].tsx           もらった一本。感想を書くフォームを置く
 │  ├─ tasting/
 │  │  ├─ new.tsx
 │  │  └─ [id].tsx
@@ -180,7 +177,8 @@ apps/mobile/src/
 
 ```
 packages/shared/src/
-├─ enums.ts           occasion、budget、bottleSize、giftStatus、fulfillmentStatus、verdict、tasteHint
+├─ enums.ts           occasion、budget、bottleSize、giftStatus、deliveryStage、verdict、tasteHint
+├─ delivery.ts        受け取り時刻から手配の進み具合を計算する関数（D28）
 ├─ bottle.ts          Bottle（公開情報）
 ├─ recommendation.ts  RecommendInput、Candidate（おすすめの印と一文を含む）
 ├─ gift.ts            CreateGiftInput、GiftSummary、GiftDetail、GiftDisplayStatus

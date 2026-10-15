@@ -5,7 +5,7 @@
 ## 方針
 
 - 主キーは text の UUID。日時は ISO 8601 の text。真偽は integer。JSON は text。
-- 状態は「ギフト」「手配」「開けたよ」の 3 つに分けて持つ。1 つの列に混ぜない。
+- ギフトの状態と開けたよは別々の列で持つ。手配の進み具合は保存せず、受け取り時刻から計算する（D28）。
 - 期限は `*_expires_at` 列とリクエスト時の比較で判定する（D6）。
 - 個人情報（住所、氏名、電話、受け取る人のメール）は `fulfillments` にだけ置く。デモで実在の住所は不要だが、入力された値は個人情報として扱う。
 - 記録（`tastings`）は本人以外が読まない。ギフトの候補選びに使わない（D3）。
@@ -28,9 +28,9 @@ user ─┬─< gifts >── bottles
 
 | 列 | 型 | 説明 |
 | --- | --- | --- |
-| role | text | `user` / `admin`。既定 `user` |
 | display_name | text? | 受け取りページに出す名前の既定値 |
 | adult_confirmed_at | text? | 会員登録時の 20 歳以上の自己申告 |
+| send_opened | integer | もらった一本に初めて感想を書いた時に開けたよを送るか。既定 1（D4） |
 
 ## bottles（カタログ。手選びで数十本）
 
@@ -97,8 +97,8 @@ issued ──住所の送信──▶ claimed
 
 - 期限切れは状態ではない。`status = issued` かつ `token_expires_at` を過ぎていれば期限切れとして扱う。
 - リンクの作り直しは `issued` の間ならいつでもできる。状態は `issued` のまま、ハッシュ、暗号化トークン、有効期限を入れ替える。古いトークンは使えなくなる（D11）。
-- キャンセルできるのは `issued` の間だけで、贈った本人か運営だけ（D10）。`claimed` からは移れない。
-- 配送の進み具合は `fulfillments.status`、開けたよは `opened_at` で表し、ここには持たない。
+- キャンセルできるのは `issued` の間だけで、贈った本人だけ（D10）。`claimed` からは移れない。
+- 手配の進み具合は `claimed_at` からの経過時間で計算し、開けたよは `opened_at` で表す。どちらも `status` には持たない。
 
 ### リンクの有効期限
 
@@ -106,18 +106,16 @@ issued ──住所の送信──▶ claimed
 | --- | --- |
 | 発行、作り直し | その時刻から 30 日 |
 | 受け取り | 受け取りから 90 日 |
-| 届いた | 届いた日から 30 日 |
 | キャンセル | 即時 |
 
 ## fulfillments（住所と手配）
 
-受け取りで作られる。1 ギフトに 1 つ。実際には買わず送らない。状態は運営画面から手で進める（D14）。
+受け取りで作られる。1 ギフトに 1 つ。実際には買わず送らない（D14）。中身は住所の記録だけで、手配の進み具合は持たない（D28）。
 
 | 列 | 型 | 説明 |
 | --- | --- | --- |
 | id | text PK | |
 | gift_id | text UNIQUE FK gifts | |
-| status | text | 下記 |
 | recipient_name | text | |
 | postal_code | text | |
 | prefecture | text | |
@@ -127,22 +125,22 @@ issued ──住所の送信──▶ claimed
 | phone | text | |
 | recipient_email | text? | 任意。アプリへの自動紐づけに使う |
 | adult_confirmed_at | text | 受け取る人の 20 歳以上の自己申告 |
-| arranged_at、shipped_at、delivered_at | text? | |
-| note | text? | 運営メモ |
 | created_at、updated_at | text | |
 
-索引: `(status, created_at)`、`recipient_email`。
+索引: `recipient_email`。
 
-### 手配の状態
+### 手配の進み具合（計算で出す）
 
-```
-pending ──▶ arranged ──▶ shipped ──▶ delivered
-   │
-   └──▶ cancelled
-```
+保存しない。`gifts.claimed_at` と今の時刻から計算する（D6、D28）。段階の時間 `DEMO_STEP` は定数で、デモでは 1 分程度。
 
-- `pending` は受け取り直後。運営が手配する前。
-- 手配の `cancelled` は運営だけが使う。受け取った人から止めてほしいと連絡があった時など。贈る人は受け取られた後のギフトをキャンセルできない（D10）。
+| 受け取りからの経過 | 段階 |
+| --- | --- |
+| DEMO_STEP 未満 | 受け取り済み、手配中 |
+| DEMO_STEP 以上 | 手配しました |
+| DEMO_STEP × 2 以上 | 発送しました |
+| DEMO_STEP × 3 以上 | 届きました |
+
+計算は packages/shared の関数 1 つにまとめ、API、Web、アプリで同じものを使う。
 
 ## gift_events（状況の履歴）
 
@@ -152,8 +150,8 @@ pending ──▶ arranged ──▶ shipped ──▶ delivered
 | --- | --- | --- |
 | id | text PK | |
 | gift_id | text FK gifts | |
-| type | text | `issued` / `reissued` / `claimed` / `arranged` / `shipped` / `delivered` / `opened` / `cancelled` / `linked` |
-| actor | text | `giver` / `recipient` / `admin` / `system` |
+| type | text | `issued` / `reissued` / `claimed` / `opened` / `cancelled` / `linked` |
+| actor | text | `giver` / `recipient` / `system` |
 | payload | text JSON? | 補足。個人情報は入れない |
 | created_at | text | |
 
@@ -177,7 +175,7 @@ pending ──▶ arranged ──▶ shipped ──▶ delivered
 索引: `(user_id, tasted_on)`。
 制約: `bottle_id`、`sake_name`、`gift_id` のどれか 1 つは必須。
 
-開けたよとの関係: 記録の作成時に「開けたよを送る」が選ばれ、紐づいたギフトの `opened_at` が空なら、同じトランザクションで `opened_at` を埋め、`gift_events` に `opened` を足す。記録の中身はギフト側に何も写さない。
+開けたよとの関係: `gift_id` 付きの記録を作る時、本人の `user.send_opened` が 1 で、ギフトの `opened_at` が空なら、同じトランザクションで `opened_at` を埋め、`gift_events` に `opened` を足す（D4）。記録の中身はギフト側に何も写さない。
 
 ## 候補の計算（ギフト）
 
