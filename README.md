@@ -12,7 +12,8 @@
 - [docs/architecture.md](docs/architecture.md) 構成、ディレクトリ、API
 - [docs/auth.md](docs/auth.md) 認証・認可
 - [docs/data-model.md](docs/data-model.md) テーブル設計
-- [docs/design-discussion.md](docs/design-discussion.md) UI の論点
+- [docs/screens.md](docs/screens.md) 画面設計
+- [docs/design-discussion.md](docs/design-discussion.md) 残っている UI の論点
 - [CLAUDE.md](CLAUDE.md) 実装者向けの入口と再構築の順番
 
 ## 構成

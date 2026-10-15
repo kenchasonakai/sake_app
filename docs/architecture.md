@@ -96,7 +96,7 @@ apps/api/
 | GET | /api/health | 不要 | 疎通確認 |
 | ALL | /api/auth/* | - | Better Auth |
 | GET | /api/bottles、/api/bottles/:id | 不要 | カタログ |
-| POST | /api/recommendations | 不要 | 場面・予算・ヒントから候補 2〜3 本を返す。保存しない |
+| POST | /api/recommendations | 不要 | 場面・予算・ヒントから、予算内の候補をおすすめの印付きで返す。保存しない |
 | POST | /api/gifts | 必要 | 確定。一本、一言、名前、場面、予算、見せた候補を受け取り、ギフトとリンクを作る |
 | GET | /api/gifts | 必要 | 自分が贈ったギフトの一覧と状況 |
 | GET | /api/gifts/:id | 必要（贈った本人） | 詳細と状況 |
@@ -149,7 +149,7 @@ apps/mobile/src/
 │  │  └─ settings.tsx       アカウント、表示名
 │  ├─ gift/
 │  │  ├─ new.tsx            G2 場面と予算
-│  │  ├─ candidates.tsx     G3 候補
+│  │  ├─ candidates.tsx     G3 候補。1 枚ずつめくる
 │  │  ├─ message.tsx        G4 一言と名前
 │  │  ├─ confirm.tsx        G5〜G6 サインインと確定
 │  │  ├─ [id]/share.tsx     G7 共有
@@ -182,7 +182,7 @@ apps/mobile/src/
 packages/shared/src/
 ├─ enums.ts           occasion、giftStatus、fulfillmentStatus、verdict、tasteHint
 ├─ bottle.ts          Bottle（公開情報）
-├─ recommendation.ts  RecommendInput、Candidate
+├─ recommendation.ts  RecommendInput、Candidate（おすすめの印と一文を含む）
 ├─ gift.ts            CreateGiftInput、GiftSummary、GiftDetail、GiftDisplayStatus
 ├─ claim.ts           ClaimView（受け取りページの出し分け）、ClaimInput（住所など）
 ├─ received.ts        ReceivedGift、LinkInput

@@ -10,8 +10,9 @@
 4. [docs/architecture.md](docs/architecture.md) 構成、ディレクトリ、API の一覧
 5. [docs/auth.md](docs/auth.md) 認証、受け取りトークン、認可
 6. [docs/data-model.md](docs/data-model.md) テーブル設計と候補の計算
-7. [docs/design-discussion.md](docs/design-discussion.md) UI の論点
-8. [README.md](README.md) セットアップとコマンド
+7. [docs/screens.md](docs/screens.md) 画面設計、色と書体
+8. [docs/design-discussion.md](docs/design-discussion.md) 残っている UI の論点
+9. [README.md](README.md) セットアップとコマンド
 
 ## 技術
 
