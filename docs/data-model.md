@@ -9,7 +9,7 @@
 - 期限は `*_expires_at` 列とリクエスト時の比較で判定する（D6）。
 - 個人情報（住所、氏名、電話、受け取る人のメール）は `fulfillments` にだけ置く。
 - 記録（`tastings`）は本人以外が読まない。ギフトの候補選びに使わない（D3）。
-- お金の流れが決まるまで決済のテーブルは作らない（O1）。
+- 決済のテーブルは作らない（D14）。
 
 ## 一覧
 
@@ -112,7 +112,7 @@ issued ──住所の送信──▶ claimed
 
 ## fulfillments（住所と手配）
 
-受け取りで作られる。1 ギフトに 1 つ。手配の方法は O1 で決まるので、方法を列で切り替えられる形にしておく。
+受け取りで作られる。1 ギフトに 1 つ。今は運営の手動手配だけ（D14）。本番で別の手配に移れるよう、方法を列で持っておく。
 
 | 列 | 型 | 説明 |
 | --- | --- | --- |
@@ -128,11 +128,11 @@ issued ──住所の送信──▶ claimed
 | phone | text | |
 | recipient_email | text? | 任意。アプリへの自動紐づけに使う |
 | adult_confirmed_at | text | 受け取る人の 20 歳以上の自己申告 |
-| consented_at | text | 住所を手配先に渡すことへの同意 |
-| method | text | 手配の方法。O1 が決まるまでは `manual` だけ |
+| consented_at | text | 住所の使い道への同意 |
+| method | text | 手配の方法。今は `manual` だけ |
 | vendor | text? | 実際に手配した先（通販サイト、酒販店など） |
 | vendor_ref | text? | 先方の注文番号 |
-| cost_yen | integer? | 実際にかかった金額 |
+| cost_yen | integer? | 運営が実際に買って送った時にかかった金額。送らないデモでは空 |
 | carrier、tracking_number | text? | |
 | arranged_at、shipped_at、delivered_at | text? | |
 | failed_reason | text? | |
@@ -153,7 +153,7 @@ pending ──▶ arranged ──▶ shipped ──▶ delivered
 
 - `pending` は受け取り直後。運営が手配する前。
 - 手配の `cancelled` は運営だけが使う。受け取った人から止めてほしいと連絡があった時など。贈る人は受け取られた後のギフトをキャンセルできない（D10）。
-- 手配できなかった時は `failed` にして、運営から贈る人に連絡する。選び直しか返金かは O1 で決まる。
+- 手配できなかった時は `failed` にして、運営から贈る人に連絡する。代金を受け取っていないので返金はない。
 - 個人情報の列は、手配が終わった後にリンクの有効期限が切れたら消し、`pii_purged_at` を埋める。最初は運営画面から手動で、自動化する時に Cron を足す。
 
 ## gift_events（状況の履歴）

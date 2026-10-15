@@ -68,7 +68,7 @@ apps/api/
    │  ├─ claims.ts          トークン検証、住所の保存、手配の作成
    │  ├─ linking.ts         受け取る人のアカウントへの紐づけ（3 経路）
    │  ├─ tastings.ts        記録と開けたよ
-   │  ├─ fulfillment.ts     手配の状態更新（O1 で中身が決まる）
+   │  ├─ fulfillment.ts     手配の状態更新。今は運営の手動操作だけ（D14）
    │  └─ notify.ts          贈る人へのプッシュ
    ├─ db/
    │  ├─ index.ts
