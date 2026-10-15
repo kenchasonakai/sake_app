@@ -16,7 +16,7 @@
 
 - **Better Auth** を apps/api に置く。drizzle アダプタで D1 に `user`、`session`、`account`、`verification` を持つ。
 - **サインイン手段はメール OTP**。6 桁のコードをメールで送る。パスワードは持たない。
-- Apple と Google のサインインは Development Build 以降に足す。Expo Go ではリダイレクトが不安定なため。Google を入れるなら、Apple の審査要件で Sign in with Apple も必要になる。
+- Apple や Google のサインインは使わない。Expo Go ではリダイレクトの扱いが難しく、ストアにも出さないため（D17）。
 - **メール送信**は Resend などの外部サービスか Cloudflare のメール送信。staging では送らずログに出す。
 - **成人の自己申告**は、贈る人は会員登録時に `user.adult_confirmed_at`、受け取る人は受け取りフォームで `fulfillments.adult_confirmed_at` に残す。
 
@@ -25,7 +25,7 @@
 公開の入口は Web の Worker だけ（D7）なので、アプリもブラウザも同じオリジンに話す。
 
 - Better Auth の `baseURL` は公開の入口のオリジン。`basePath` は `/api/auth`。Web が `/api/*` を API に渡すので、API から見ても同じ URL になる。
-- **アプリ**: `@better-auth/expo` が Cookie を SecureStore に保存し、型付きクライアントの fetch に Cookie ヘッダを付ける。`trustedOrigins` にアプリの scheme を入れる。scheme はアプリ名が決まったら決める（O6）。
+- **アプリ**: `@better-auth/expo` が Cookie を SecureStore に保存し、型付きクライアントの fetch に Cookie ヘッダを付ける。Expo Go で動かすので、`trustedOrigins` には Expo Go の `exp://` を入れる（D17）。
 - **将来の Web 版**: 同じオリジンの Cookie がそのまま使える。
 - 開発時は `BETTER_AUTH_URL` を mode ごとに変える。
 
@@ -45,7 +45,7 @@
 
 ## 受け取る人のアカウントへの紐づけ
 
-経路は [flows.md](flows.md) の 3 つ。どの経路でも同じ service を通し、次を守る。
+経路は [flows.md](flows.md) の 2 つ。どの経路でも同じ service を通し、次を守る。
 
 - 紐づけられるのは `claimed` のギフトで、トークンの有効期限内のものだけ。
 - 1 つのギフトに紐づくアカウントは 1 つ。すでに別のアカウントに紐づいていたら失敗にする。
@@ -63,7 +63,7 @@
 | ギフトのキャンセル | × | ○ 贈った本人だけ、受け取られる前 | × | ○ |
 | 受け取りページの閲覧 | - | - | ○ 住所以外 | ○ |
 | 住所の送信 | - | - | ○ 1 回 | ○ |
-| 住所の閲覧 | × | × 贈った本人も不可 | × | ○ 手配に必要な間だけ |
+| 住所の閲覧 | × | × 贈った本人も不可 | × | ○ 運営画面で |
 | もらったギフトの紐づけ | × | ○ | ○ トークンを持つ本人 | - |
 | 開けたよの送信 | × | ○ 紐づいた本人、1 回 | × | × |
 | 記録の作成、閲覧 | × | ○ 自分のものだけ | × | × 運営も読まない |

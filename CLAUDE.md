@@ -21,7 +21,7 @@
 - apps/api: Hono、Drizzle、D1。公開しない。`/api/*` と、Web だけが呼ぶ `/internal/*`。
 - apps/mobile: Expo SDK 57、Expo Router。API は `hc<AppType>()` で呼ぶ。
 - 入力と返却の形は packages/shared の Zod で決め、二重に持たない。
-- 開発者は Mac を持たない。iOS は Expo Go と EAS のクラウドビルドだけ。
+- ストアには出さない。アプリは Expo Go、受け取りリンクは Web でだけ動かす。Expo Go で動かないライブラリ、ソーシャルログイン、Universal Links、プッシュ通知は使わない（decisions.md の D17、D18）。
 
 ## 守ること
 
@@ -32,7 +32,7 @@
 - ギフトのキャンセルは受け取られる前に贈った本人だけ。言葉は「キャンセル」。キャンセルと期限切れは受け取る人に同じ文面を出す。
 - GET で状態を変えない。受け取りリンクは LINE のプレビューやスキャナが先に開く。
 - 期限は `*_expires_at` で判定し、定期実行で書き換えない。
-- 決済は作らない。贈る人から代金を受け取らず、運営が手動で手配する（decisions.md の D14）。
+- すべてデモ用。決済も購入も発送もしない。手配の状態は運営画面から手で進める（decisions.md の D14）。送料は扱わない。
 - 変更後はルートで `pnpm typecheck` を通す。API を変えたら `pnpm --filter @sake/api build:types` で型を出し直す。
 - schema を変えたら `pnpm --filter @sake/api db:generate` で SQL を作り、`db:migrate:local` で適用する。生成された SQL は手で直さない。
 
@@ -42,7 +42,7 @@
 
 - API のルートが `/api` 配下になく、`/internal` もない。動作確認用の `sakes` テーブルが残っている。
 - Web は `/api/*` を転送していない。受け取りフォームの送信先が `/g/:token/claim` で、住所が 1 つの入力欄。
-- アプリは Expo のテンプレートのままで、app.json の name と scheme が `mobile`。
+- アプリは Expo のテンプレートのままで、app.json の name と slug が `mobile`。
 
 ## 再構築の順番（提案）
 
@@ -51,6 +51,6 @@
 3. 候補の計算（`POST /api/recommendations`）。
 4. アプリの贈る流れ。G2〜G4 は端末の中、G5 でメール OTP、G6 で確定とリンク発行。
 5. 受け取りページを実データに繋ぎ、住所の送信で fulfillments を作る。
-6. 贈る人の状況画面と通知。
+6. 贈る人の状況画面。
 7. 受け取る人の紐づけ、記録、開けたよ。
 8. 運営画面。画面のイメージを話してから（O4）。

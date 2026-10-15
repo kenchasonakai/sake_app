@@ -1,6 +1,6 @@
 # sake_app
 
-日本酒を知らなくても、日本酒好きの友達に外さない一本を贈れるアプリ。TypeScript のみで iOS / Android 両対応（Mac なし前提）。
+日本酒を知らなくても、日本酒好きの友達に外さない一本を贈れるアプリ。ハッカソンのデモ用で、アプリは Expo Go、受け取りリンクは Web で動かす。ストアには出さず、決済も発送もしない。
 
 設計は docs にある。コードは Phase 0 の骨組みで、docs への追従はこれから（[CLAUDE.md](CLAUDE.md) の「今のコードの状態」）。
 
@@ -105,10 +105,11 @@ pnpm api <cmd>   # apps/api のスクリプト実行（例: pnpm api db:generate
 pnpm mobile <cmd>
 ```
 
-## 段階的な進め方
+## 進め方
 
-1. Phase 0（この骨組み）: モノレポ、共有 Zod、API とアプリの疎通、受け取りリンクの雛形
-2. Phase 1: アプリで贈る流れ、Web の受け取りリンク、staging Worker + D1、手動運用で注文を回す。課金ゼロ
-3. Phase 2: R2 で写真、EAS Update、Sentry。Apple Developer 申請
-4. Phase 3: iOS Development Build、プッシュ通知とソーシャルログイン、TestFlight
-5. Phase 4: Android は手元 PC でビルド → クローズドテスト → Play 公開
+作る順番は [CLAUDE.md](CLAUDE.md) の「再構築の順番」。デモに向けては次を用意する。
+
+- staging に api と web をデプロイし、受け取りリンクを LINE から開けるようにする。
+- アプリは Expo Go で開き、デプロイした Web のオリジンに向ける。
+- カタログに候補を数十本入れる。
+- 運営画面から手配の状態を進めて、贈る人と受け取る人の画面が変わるところを見せる。

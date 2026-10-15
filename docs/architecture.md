@@ -9,8 +9,8 @@
  iPhone/Android ─┤
  アプリ           │  apps/web（Worker: sake-web）
                  │   ├─ /g/:token        受け取りページ（Hono JSX、JS なし）
- ブラウザ ────────┤   ├─ /.well-known/*   Universal Links / App Links の検証ファイル（後で）
- LINE プレビュー   │   ├─ /                入口（後で Expo の Web 出力）
+ ブラウザ ────────┤   ├─ /                入口（後で Expo の Web 出力）
+ LINE プレビュー   │
                  │   └─ /api/*  ──────┐  そのまま API に渡す
                  └────────────────────│───────────────────
                                       │ サービスバインディング env.API
@@ -33,7 +33,7 @@
 ```
 sake_app/
 ├─ apps/
-│  ├─ mobile/      Expo。iOS / Android。将来 expo export --platform web で Web 版も
+│  ├─ mobile/      Expo。Expo Go で動かし、ストアには出さない（D17）。将来 expo export --platform web で Web 版も
 │  ├─ api/         Hono + Drizzle + D1。HTML は返さない
 │  └─ web/         Hono JSX。公開の入口。受け取りページと /api 転送
 ├─ packages/
@@ -58,7 +58,7 @@ apps/api/
    │  │  ├─ gifts.ts        贈ったギフトの作成、一覧、詳細、リンクの再表示と作り直し、キャンセル
    │  │  ├─ received.ts     もらったギフトの一覧、紐づけ、開けたよ
    │  │  ├─ tastings.ts     記録
-   │  │  ├─ me.ts           自分の情報、表示名、プッシュトークン
+   │  │  ├─ me.ts           自分の情報、表示名
    │  │  └─ admin.ts        運営用（O4）
    │  └─ internal/          /internal/* 。Web の Worker だけが呼ぶ
    │     └─ claims.ts       受け取りページの表示用データ、住所の送信
@@ -66,10 +66,9 @@ apps/api/
    │  ├─ recommend.ts       場面・予算・好みのヒントからの候補計算（D3: 記録は使わない）
    │  ├─ gifts.ts           作成、状態、期限、リンクの作り直し、キャンセル
    │  ├─ claims.ts          トークン検証、住所の保存、手配の作成
-   │  ├─ linking.ts         受け取る人のアカウントへの紐づけ（3 経路）
+   │  ├─ linking.ts         受け取る人のアカウントへの紐づけ（2 経路）
    │  ├─ tastings.ts        記録と開けたよ
-   │  ├─ fulfillment.ts     手配の状態更新。今は運営の手動操作だけ（D14）
-   │  └─ notify.ts          贈る人へのプッシュ
+   │  └─ fulfillment.ts     手配の状態を運営画面から進める（D14）
    ├─ db/
    │  ├─ index.ts
    │  └─ schema/            auth.ts、catalog.ts、gifts.ts、fulfillment.ts、tastings.ts、devices.ts
@@ -110,7 +109,6 @@ apps/api/
 | GET、POST | /api/tastings | 必要 | 自分の記録の一覧、作成。作成時に開けたよを一緒に送れる |
 | GET、PATCH、DELETE | /api/tastings/:id | 必要（本人） | |
 | GET、PATCH | /api/me | 必要 | 自分の情報、既定の表示名 |
-| PUT | /api/me/push-token | 必要 | プッシュトークンの登録 |
 | * | /api/admin/* | admin | 手配の一覧と更新（O4） |
 
 `/internal/*`（Web の Worker だけ）:
@@ -127,10 +125,9 @@ apps/web/
 ├─ cloudflare.config.ts     env.API（サービスバインディング）、レート制限
 ├─ public/                  後で Expo の Web 出力を置く
 └─ src/
-   ├─ index.tsx             /api/* の転送、/g/:token、/.well-known/*、/
+   ├─ index.tsx             /api/* の転送、/g/:token、/
    ├─ routes/
-   │  ├─ receive.tsx        GET /g/:token、POST /g/:token
-   │  └─ well-known.ts      apple-app-site-association、assetlinks.json（Development Build 以降）
+   │  └─ receive.tsx        GET /g/:token、POST /g/:token
    ├─ pages/                Hono JSX のページ。Layout、受け取り、状況、使えないリンク（期限切れとキャンセルで共通）、完了
    └─ lib/api.ts            /internal 用の型付きクライアント（fetch = env.API.fetch）
 ```
@@ -149,7 +146,7 @@ apps/mobile/src/
 │  ├─ (tabs)/
 │  │  ├─ index.tsx          ホーム。贈る入口と、贈ったギフトの状況
 │  │  ├─ records.tsx        記録。もらった一本もここに出る
-│  │  └─ settings.tsx       アカウント、表示名、通知
+│  │  └─ settings.tsx       アカウント、表示名
 │  ├─ gift/
 │  │  ├─ new.tsx            G2 場面と予算
 │  │  ├─ candidates.tsx     G3 候補
@@ -171,7 +168,6 @@ apps/mobile/src/
 │  ├─ api.ts                hc<AppType>。Cookie を付ける fetch
 │  ├─ auth-client.ts        Better Auth の Expo クライアント
 │  ├─ gift-draft.ts         G2〜G4 の入力を端末に持つ（確定前はサーバーに送らない）
-│  └─ notifications.ts
 └─ constants/
 ```
 
@@ -202,5 +198,6 @@ packages/shared/src/
 | production | sake-web、後で独自ドメイン | sake-api、公開なし | sake-db |
 
 - アプリの `EXPO_PUBLIC_API_URL` は公開の入口のオリジン。開発時は PC の LAN の IP と 5174 番。
+- デモでは staging だけをデプロイすればよい。受け取りリンクを LINE から開けるよう、Web は必ずデプロイしておく。アプリは Expo Go で開き、デプロイした Web のオリジンに向ける。
 - デプロイは api、web の順。秘密情報は `cf deploy --secrets-file` で渡す。
-- 定期実行は今は使わない（D6）。住所の削除を自動にする段階で API の Worker に Cron を足す。
+- 定期実行は使わない（D6、D14）。
