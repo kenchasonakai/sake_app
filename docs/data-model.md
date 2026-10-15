@@ -40,7 +40,8 @@ user ─┬─< gifts >── bottles
 | name | text | 銘柄 |
 | brewery | text | 蔵 |
 | prefecture | text? | |
-| volume_ml | integer | 180、300 など |
+| volume_ml | integer | 300 前後か 720 |
+| size | text | `small`（300ml 前後）/ `large`（720ml）。候補の切り替えに使う（D23） |
 | price_yen | integer | 税込の価格の目安 |
 | taste_sweetness | integer 1〜5 | 甘め 1 〜 すっきり辛め 5 |
 | taste_body | integer 1〜5 | 軽やか 1 〜 コクあり 5 |
@@ -56,7 +57,7 @@ user ─┬─< gifts >── bottles
 | sort_order | integer | |
 | created_at、updated_at | text | |
 
-索引: `(status, price_yen)`。
+索引: `(status, size, price_yen)`。
 
 ## gifts
 
@@ -67,7 +68,7 @@ user ─┬─< gifts >── bottles
 | occasion | text | `birthday` / `thanks` / `casual` |
 | budget_yen | integer | 商品の価格と比べる（D15） |
 | taste_hint | text JSON? | 任意。`{ preference, level }`。既定は「分からない」で null |
-| candidates | text JSON | 見せた候補のスナップショット。`[{ bottleId, rank, pick, priceYen, score }]`。`pick` は `standard` / `discovery` / null。選定ロジックの見直しに使う |
+| candidates | text JSON | 見せた候補のスナップショット。`[{ bottleId, size, rank, pick, priceYen, score }]`。`pick` は `standard` / `discovery` / null。選定ロジックの見直しに使う |
 | bottle_id | text FK bottles | 選んだ一本 |
 | bottle_snapshot | text JSON | 確定時点の名前、容量、価格、説明。カタログが変わっても受け取りページの表示が変わらないように |
 | reasons | text JSON | 決めた理由のチップ |
@@ -181,9 +182,11 @@ pending ──▶ arranged ──▶ shipped ──▶ delivered
 
 ## 候補の計算（ギフト）
 
-入力は場面、予算の区切り、任意の好みのヒントだけ。記録は使わない（D3）。本数は決めない（D20）。
+入力は場面、予算の区切り、任意の好みのヒントだけ。記録は使わない（D3）。本数は決めない（D20）。小さい瓶と大きい瓶は別々に計算し、2 つの束として一度に返す（D23）。
 
-1. `status = active` で、価格が予算以下の酒をすべて取る（D15）。
+各大きさの束について:
+
+1. `status = active` で、その大きさで、価格が予算以下の酒をすべて取る（D15、D24）。
 2. それぞれに点を付ける。
    - 好みのヒントがあれば、味の軸がヒントに近いほど高い。「分からない」なら軸が真ん中に近いほど高い。
    - 場面で重みを変える。お礼は定番寄り、誕生日は予算に近い価格寄り、なんとなくは価格の低い方寄り。
@@ -193,7 +196,8 @@ pending ──▶ arranged ──▶ shipped ──▶ delivered
    - どちらかの組に一本もなければ、おすすめは 1 本だけにする。
 4. おすすめには一文を添える。場面と組から定型文で作る。例「誕生日に贈るなら、まずはこの一本です」「誕生日に少し特別感を出すなら、この一本です」。
 5. 並びは、定番のおすすめ、定番以外のおすすめ、残りを点の高い順。
-6. 保存しない。ギフトの確定時に、見せた候補を `gifts.candidates` に残す。
+
+返す時に、最初に開く大きさ（2,000円までなら小さめ、それ以外は大きめ）も添える。保存しない。ギフトの確定時に、見せた候補を `gifts.candidates` に残す。
 
 ## 今のコードとの差分
 
