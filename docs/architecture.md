@@ -55,7 +55,7 @@ apps/api/
    │  ├─ public/            /api/* 。アプリと将来の Web 版が使う
    │  │  ├─ bottles.ts      カタログの参照
    │  │  ├─ recommendations.ts  候補の計算（ログイン不要、保存しない）
-   │  │  ├─ gifts.ts        贈ったギフトの作成、一覧、詳細、再発行、取り消し、リンクの再表示
+   │  │  ├─ gifts.ts        贈ったギフトの作成、一覧、詳細、リンクの再表示と作り直し、キャンセル
    │  │  ├─ received.ts     もらったギフトの一覧、紐づけ、開けたよ
    │  │  ├─ tastings.ts     記録
    │  │  ├─ me.ts           自分の情報、表示名、プッシュトークン
@@ -64,7 +64,7 @@ apps/api/
    │     └─ claims.ts       受け取りページの表示用データ、住所の送信
    ├─ services/             業務ロジック。Hono に依存しない関数。テストはここに書く
    │  ├─ recommend.ts       場面・予算・好みのヒントからの候補計算（D3: 記録は使わない）
-   │  ├─ gifts.ts           作成、状態、期限、再発行、取り消し
+   │  ├─ gifts.ts           作成、状態、期限、リンクの作り直し、キャンセル
    │  ├─ claims.ts          トークン検証、住所の保存、手配の作成
    │  ├─ linking.ts         受け取る人のアカウントへの紐づけ（3 経路）
    │  ├─ tastings.ts        記録と開けたよ
@@ -102,8 +102,8 @@ apps/api/
 | GET | /api/gifts | 必要 | 自分が贈ったギフトの一覧と状況 |
 | GET | /api/gifts/:id | 必要（贈った本人） | 詳細と状況 |
 | GET | /api/gifts/:id/link | 必要（贈った本人） | リンクの再表示 |
-| POST | /api/gifts/:id/reissue | 必要（贈った本人） | 期限切れの時に作り直す |
-| POST | /api/gifts/:id/cancel | 必要（贈った本人） | 受け取り前だけ取り消せる |
+| POST | /api/gifts/:id/reissue | 必要（贈った本人） | リンクの作り直し。受け取られる前ならいつでも。古いリンクは無効 |
+| POST | /api/gifts/:id/cancel | 必要（贈った本人） | キャンセル。受け取られる前だけ |
 | GET | /api/received | 必要 | 自分に紐づいたもらったギフト |
 | POST | /api/received/link | 必要 | 受け取りリンクを貼って紐づける |
 | POST | /api/received/:giftId/opened | 必要（紐づいた本人） | 開けたよを 1 回だけ送る |
@@ -131,7 +131,7 @@ apps/web/
    ├─ routes/
    │  ├─ receive.tsx        GET /g/:token、POST /g/:token
    │  └─ well-known.ts      apple-app-site-association、assetlinks.json（Development Build 以降）
-   ├─ pages/                Hono JSX のページ。Layout、受け取り、状況、期限切れ、完了
+   ├─ pages/                Hono JSX のページ。Layout、受け取り、状況、使えないリンク（期限切れとキャンセルで共通）、完了
    └─ lib/api.ts            /internal 用の型付きクライアント（fetch = env.API.fetch）
 ```
 
