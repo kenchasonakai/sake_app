@@ -41,7 +41,7 @@ user ─┬─< gifts >── bottles
 | brewery | text | 蔵 |
 | prefecture | text? | |
 | volume_ml | integer | 300 前後か 720 |
-| size | text | `small`（300ml 前後）/ `large`（720ml）。候補の切り替えに使う（D23） |
+| size | text | `small`（300ml 前後、画面では飲みきりサイズ）/ `large`（720ml、画面ではたっぷりサイズ）。候補の切り替えに使う（D23） |
 | price_yen | integer | 税込の価格の目安 |
 | taste_sweetness | integer 1〜5 | 甘め 1 〜 すっきり辛め 5 |
 | taste_body | integer 1〜5 | 軽やか 1 〜 コクあり 5 |
@@ -197,7 +197,7 @@ pending ──▶ arranged ──▶ shipped ──▶ delivered
 4. おすすめには一文を添える。場面と組から定型文で作る。例「誕生日に贈るなら、まずはこの一本です」「誕生日に少し特別感を出すなら、この一本です」。
 5. 並びは、定番のおすすめ、定番以外のおすすめ、残りを点の高い順。
 
-返す時に、最初に開く大きさ（2,000円までなら小さめ、それ以外は大きめ）も添える。保存しない。ギフトの確定時に、見せた候補を `gifts.candidates` に残す。
+返す時に、最初に開く大きさ（2,000円までなら飲みきりサイズ、それ以外はたっぷりサイズ）も添える。保存しない。ギフトの確定時に、見せた候補を `gifts.candidates` に残す。
 
 ## 今のコードとの差分
 
