@@ -1,189 +1,176 @@
-# テーブル設計（D1 / SQLite, Drizzle）
+# テーブル設計（D1 / SQLite、Drizzle）
 
-方針:
-- 主キーは `text` の UUID。日時は ISO 8601 の `text`（`created_at` は DB 既定値）。真偽値は `integer`。
-- 状態遷移はすべて `gift_events` に残し、`gifts.status` はその射影。
-- 個人情報（住所）は `orders` だけに置き、配送完了から一定期間で消す。
-- Better Auth のテーブル（`user / session / account / verification`）はプラグインの生成に従い、アプリ側の列は `user` に最小限だけ足す。
+前提: [decisions.md](decisions.md)、[flows.md](flows.md)、[auth.md](auth.md)。
+
+## 方針
+
+- 主キーは text の UUID。日時は ISO 8601 の text。真偽は integer。JSON は text。
+- 状態は「ギフト」「手配」「開けたよ」の 3 つに分けて持つ。1 つの列に混ぜない。
+- 期限は `*_expires_at` 列とリクエスト時の比較で判定する（D6）。
+- 個人情報（住所、氏名、電話、受け取る人のメール）は `fulfillments` にだけ置く。
+- 記録（`tastings`）は本人以外が読まない。ギフトの候補選びに使わない（D3）。
+- お金の流れが決まるまで決済のテーブルは作らない（O1）。
 
 ## 一覧
 
 ```
-user ─┬─< gifts >─ bottles >─ shops
-      │     │
-      │     ├─1 orders ─ payments
-      │     ├─< gift_candidates
-      │     └─< gift_events
-      ├─< recipients（贈り主が管理する「相手」）
-      ├─< tastings >─ bottles
+user ─┬─< gifts >── bottles
+      │     ├─1 fulfillments   住所と手配。1 ギフトに 1 つ
+      │     └─< gift_events    状況の履歴
+      ├─< tastings >─ bottles、gifts（もらった一本）
       └─< push_tokens
 ```
 
-## 認証（Better Auth）
+`gifts` から `user` へは 2 本ある。贈った人の `giver_user_id` と、紐づいた受け取る人の `recipient_user_id`。
 
-`user` にアプリ固有の列を追加:
+## user（Better Auth）
+
+`user`、`session`、`account`、`verification` は Better Auth の生成に従う。`user` にだけ列を足す。
 
 | 列 | 型 | 説明 |
 | --- | --- | --- |
-| role | text | `user` / `admin` / `shop`。既定 `user` |
-| shop_id | text? | role=shop の時の所属店 |
-| is_anonymous | integer | anonymous プラグインが管理 |
-| adult_confirmed_at | text? | 贈る側の飲酒年齢の自己申告 |
+| role | text | `user` / `admin`。既定 `user` |
+| display_name | text? | 受け取りページに出す名前の既定値 |
+| adult_confirmed_at | text? | 会員登録時の 20 歳以上の自己申告 |
 
-`session / account / verification` はプラグインの既定どおり。
-
-## カタログ
-
-### shops（提携先。最初は 1 行）
+## bottles（カタログ。手選びで数十本）
 
 | 列 | 型 | 説明 |
 | --- | --- | --- |
 | id | text PK | |
-| name | text | |
-| contact | text? | 注文を渡す先（メールなど） |
-| ec_url | text? | 外出し先 |
-| is_active | integer | |
-| created_at / updated_at | text | |
-
-### bottles（手選びの候補。数十本）
-
-| 列 | 型 | 説明 |
-| --- | --- | --- |
-| id | text PK | |
-| shop_id | text FK shops | どこが発送するか |
-| name | text | 銘柄名 |
+| name | text | 銘柄 |
 | brewery | text | 蔵 |
 | prefecture | text? | |
-| sake_type | text | `junmai` … `other`（shared の enum） |
-| volume_ml | integer | 180 / 300 / 720 |
-| price_yen | integer | 税込の販売価格。予算の絞り込みに使う |
-| taste_sweetness | integer 1–5 | 甘口 1 〜 辛口 5。「味」の軸その 1 |
-| taste_richness | integer 1–5 | すっきり 1 〜 コクあり 5。「味」の軸その 2 |
-| fame | integer 1–5 | 定番 1 〜 知る人ぞ知る 5。「知名度」の軸 |
-| facts | text (JSON) | 事実タグの配列。`many_fans` / `limited_distribution` / `new_brewery` / `award` … |
-| description_plain | text | 用語を使わない説明。贈る側が読んで決める本文 |
+| volume_ml | integer | 180、300 など |
+| price_yen | integer | 税込の価格の目安 |
+| shipping_yen | integer | 送料の目安（O2）。ハッカソンでは一律でよい |
+| taste_sweetness | integer 1〜5 | 甘め 1 〜 すっきり辛め 5 |
+| taste_body | integer 1〜5 | 軽やか 1 〜 コクあり 5 |
+| fame | integer 1〜5 | 定番 1 〜 知る人ぞ知る 5 |
+| facts | text JSON | 事実のタグ。`many_fans`、`limited_distribution`、`new_brewery`、`award` など |
+| description_plain | text | 用語を使わない説明。贈る人が読んで決める本文 |
 | pairing_hint | text? | 「こんな場面に」の一言 |
+| sake_type | text? | 純米などの区分。本文には出さず、詳細を開いた時だけ |
 | image_url | text? | |
-| external_url | text? | 蔵や店の EC |
-| status | text | `active` / `paused` / `out_of_stock` |
-| sort_order | integer | 手動の並び |
-| created_at / updated_at | text | |
+| offers | text JSON | 手配先や外出し先。`[{ vendor, url, priceYen }]` |
+| source | text | 味の軸の出所。`manual` / `ai` / `sakenowa` |
+| status | text | `active` / `paused` |
+| sort_order | integer | |
+| created_at、updated_at | text | |
 
 索引: `(status, price_yen)`。
-味の軸は最初は手入力（AI でリサーチして埋めてよい）。さけのわの API を使う場合は `source` と `source_ref` の列を足して出所を残す。
 
-## ギフト
-
-### recipients（贈り主が管理する「相手」）
-
-「同じ相手に 2 回目」を扱うための台帳。相手の個人情報は持たない（呼び名だけ）。
+## gifts
 
 | 列 | 型 | 説明 |
 | --- | --- | --- |
 | id | text PK | |
-| giver_user_id | text FK user | |
-| label | text | 贈り主から見た呼び名（「田中さん」） |
-| recipient_user_id | text? FK user | 相手がリンクからアカウントを作った時に紐づく |
-| created_at | text | |
-
-### gifts
-
-| 列 | 型 | 説明 |
-| --- | --- | --- |
-| id | text PK | |
-| giver_user_id | text FK user | 匿名ユーザーでも必ず入る |
-| recipient_id | text? FK recipients | |
+| giver_user_id | text FK user | 削除で連鎖させない |
 | occasion | text | `birthday` / `thanks` / `casual` |
-| budget_yen | integer | |
-| hint | text (JSON) | 任意の相手情報 `{ preference: "unknown" \| "sweet" \| "dry" \| "light" \| "rich", level: "unknown" \| "casual" \| "enthusiast" }` |
-| bottle_id | text? FK bottles | 決めた一本 |
-| reasons | text (JSON)? | 決めた理由（チップの選択）。一言の下書きの元 |
-| message | text? | 相手への一言 |
-| status | text | 下記の状態 |
-| claim_token | text? UNIQUE | 受け取りリンクのトークン。発行時に生成。再発行で置き換え |
-| claim_expires_at | text? | |
+| budget_yen | integer | O2 の決め方に従う |
+| taste_hint | text JSON? | 任意。`{ preference, level }`。既定は「分からない」で null |
+| candidates | text JSON | 見せた候補のスナップショット。`[{ bottleId, rank, priceYen, shippingYen, score }]`。選定ロジックの見直しに使う |
+| bottle_id | text FK bottles | 選んだ一本 |
+| bottle_snapshot | text JSON | 確定時点の名前、容量、価格、送料、説明。カタログが変わっても受け取りページの表示が変わらないように |
+| reasons | text JSON | 決めた理由のチップ |
+| message | text | 一言 |
+| giver_display_name | text | 受け取りページに出す名前。ギフトごとに変えられる |
+| status | text | `issued` / `claimed` / `cancelled` |
+| claim_token_hash | text UNIQUE | トークンの SHA-256 |
+| claim_token_enc | text | 再表示用に暗号化したトークン |
+| token_expires_at | text | リンクの有効期限。状態が進むたびに延ばす |
 | claimed_at | text? | 住所が送られた時刻 |
-| recipient_user_id | text? FK user | 受け取る側が後からアプリで紐づけた時 |
-| opened_at | text? | 受け取る側が最初の記録を付けた時刻。「開けたよ」は 1 回だけ |
-| created_at / updated_at | text | |
+| recipient_user_id | text? FK user | 受け取る人がアプリで紐づけた時 |
+| linked_at | text? | |
+| opened_at | text? | 開けたよが送られた時刻。1 回だけ |
+| cancelled_at | text? | |
+| created_at、updated_at | text | |
 
-状態（`status`）:
+索引: `(giver_user_id, created_at)`、`claim_token_hash`、`recipient_user_id`。
+
+### ギフトの状態
 
 ```
-draft ─ choose ─▶ chosen ─ message/issue ─▶ issued ─ claim ─▶ claimed ─ 店へ ─▶ ordered ─▶ shipped ─▶ delivered ─▶ opened
-                                              │                                                          
-                                              └─ 30 日 ─▶ expired（再発行で issued へ戻る）      いつでも cancelled
+issued ──住所の送信──▶ claimed
+   │
+   └──取り消し──▶ cancelled
 ```
 
-索引: `(giver_user_id, created_at)`, `claim_token`（UNIQUE）, `(recipient_user_id)`。
+- 期限切れは状態ではない。`status = issued` かつ `token_expires_at` を過ぎていれば期限切れとして扱う。
+- 再発行は `issued` のまま、ハッシュ、暗号化トークン、有効期限を入れ替える。
+- 取り消せるのは `issued` の間だけ。
+- 配送の進み具合は `fulfillments.status`、開けたよは `opened_at` で表し、ここには持たない。
 
-### gift_candidates（提示した候補のスナップショット）
+### リンクの有効期限
 
-後で選定ロジックを直すための記録。贈り主が何を見て何を選んだかが残る。
+| 時点 | token_expires_at |
+| --- | --- |
+| 発行、再発行 | その時刻から 30 日 |
+| 受け取り | 受け取りから 90 日 |
+| 届いた | 届いた日から 30 日 |
+| 取り消し | 即時 |
 
-| 列 | 型 | 説明 |
-| --- | --- | --- |
-| id | text PK | |
-| gift_id | text FK gifts | |
-| bottle_id | text FK bottles | |
-| rank | integer | 1〜3 |
-| score | real? | 選定時のスコア |
-| snapshot | text (JSON) | 提示時の価格・説明・軸の値 |
-| created_at | text | |
+## fulfillments（住所と手配）
 
-### gift_events（タイムラインと通知の元）
-
-| 列 | 型 | 説明 |
-| --- | --- | --- |
-| id | text PK | |
-| gift_id | text FK gifts | |
-| type | text | `created` / `chosen` / `issued` / `claimed` / `ordered` / `shipped` / `delivered` / `opened` / `expired` / `reissued` / `cancelled` |
-| actor | text | `giver` / `recipient` / `admin` / `system` |
-| payload | text (JSON)? | 追跡番号など。個人情報は入れない |
-| notify_to | text? | 通知先ユーザー（`gift.opened` なら贈り主） |
-| notified_at | text? | 配信済み時刻。未配信を Cron で再送 |
-| created_at | text | |
-
-索引: `(gift_id, created_at)`, `(notified_at)`（NULL のものを拾う）。
-
-## 注文と決済
-
-### orders（1 ギフト 1 注文）
+受け取りで作られる。1 ギフトに 1 つ。手配の方法は O1 で決まるので、方法を列で切り替えられる形にしておく。
 
 | 列 | 型 | 説明 |
 | --- | --- | --- |
 | id | text PK | |
 | gift_id | text UNIQUE FK gifts | |
-| shop_id | text FK shops | bottles.shop_id を転記 |
+| status | text | 下記 |
 | recipient_name | text | |
-| postal_code / prefecture / city / line1 / line2 | text | 住所。line2 は任意 |
-| phone | text? | 配送業者向け。任意 |
-| adult_confirmed_at | text | 受け取る側の自己申告 |
-| status | text | `pending`（店に未連絡）/ `handed`（店に渡した）/ `shipped` / `delivered` / `cancelled` |
-| carrier / tracking_number | text? | |
-| handed_at / shipped_at / delivered_at | text? | |
+| postal_code | text | |
+| prefecture | text | |
+| city | text | 市区町村 |
+| address_line1 | text | 番地 |
+| address_line2 | text? | 建物名、部屋番号 |
+| phone | text | |
+| recipient_email | text? | 任意。アプリへの自動紐づけに使う |
+| adult_confirmed_at | text | 受け取る人の 20 歳以上の自己申告 |
+| consented_at | text | 住所を手配先に渡すことへの同意 |
+| method | text | 手配の方法。O1 が決まるまでは `manual` だけ |
+| vendor | text? | 実際に手配した先（通販サイト、酒販店など） |
+| vendor_ref | text? | 先方の注文番号 |
+| cost_yen | integer? | 実際にかかった金額 |
+| carrier、tracking_number | text? | |
+| arranged_at、shipped_at、delivered_at | text? | |
+| failed_reason | text? | |
 | note | text? | 運営メモ |
-| pii_purged_at | text? | 住所を消した時刻。delivered から 30 日で消す |
-| created_at / updated_at | text | |
+| pii_purged_at | text? | 個人情報を消した時刻 |
+| created_at、updated_at | text | |
 
-### payments（MVP は手動。記録だけ持つ）
+索引: `(status, created_at)`、`recipient_email`。
+
+### 手配の状態
+
+```
+pending ──▶ arranged ──▶ shipped ──▶ delivered
+   │            │
+   ├────────────┴──▶ failed
+   └──▶ cancelled
+```
+
+- `pending` は受け取り直後。運営が手配する前。
+- 個人情報の列は、手配が終わった後にリンクの有効期限が切れたら消し、`pii_purged_at` を埋める。最初は運営画面から手動で、自動化する時に Cron を足す。
+
+## gift_events（状況の履歴）
+
+贈る人の状況画面と監査に使う。
 
 | 列 | 型 | 説明 |
 | --- | --- | --- |
 | id | text PK | |
 | gift_id | text FK gifts | |
-| provider | text | `manual` / `shop_link` / `stripe`（将来） |
-| amount_yen | integer | |
-| status | text | `pending` / `paid` / `refunded` |
-| external_ref | text? | 店の決済リンクの ID など |
-| paid_at | text? | |
+| type | text | `issued` / `reissued` / `claimed` / `arranged` / `shipped` / `delivered` / `failed` / `opened` / `cancelled` / `linked` |
+| actor | text | `giver` / `recipient` / `admin` / `system` |
+| payload | text JSON? | 追跡番号など。個人情報は入れない |
 | created_at | text | |
 
-媒介業免許の確認が取れるまで、アプリ内で金銭を受け取らない（[concept.md](concept.md) 8）。
+索引: `(gift_id, created_at)`。
+`linked` は監査用で、贈る人の画面には出さない。
 
-## 記録
-
-### tastings（本人だけが読める）
+## tastings（記録。本人だけ）
 
 | 列 | 型 | 説明 |
 | --- | --- | --- |
@@ -191,34 +178,38 @@ draft ─ choose ─▶ chosen ─ message/issue ─▶ issued ─ claim ─▶ 
 | user_id | text FK user | |
 | bottle_id | text? FK bottles | カタログにある酒 |
 | sake_name | text? | カタログにない酒の自由入力 |
-| gift_id | text? FK gifts | もらった酒の記録なら紐づく |
-| verdict | text | `again`（また飲みたい）/ `ok` / `not_for_me`。3 段階で「ぽちぽち」 |
-| memo | text? | 短いメモ。贈り主には渡らない |
-| tasted_at | text | |
-| created_at | text | |
+| gift_id | text? FK gifts | もらった一本。`gifts.recipient_user_id` が自分のものだけ |
+| verdict | text | `again` / `ok` / `not_for_me` |
+| memo | text? | 自分だけのメモ |
+| tasted_on | text | 日付 |
+| created_at、updated_at | text | |
 
-索引: `(user_id, tasted_at)`, `(gift_id)`。
-不変条件: `gift_id` 付きの記録を作る時、`gifts.opened_at` が NULL なら埋めて `gift_events(opened)` を 1 件だけ作る（同一トランザクション）。
+索引: `(user_id, tasted_on)`。
+制約: `bottle_id`、`sake_name`、`gift_id` のどれか 1 つは必須。
 
-### push_tokens
+開けたよとの関係: 記録の作成時に「開けたよを送る」が選ばれ、紐づいたギフトの `opened_at` が空なら、同じトランザクションで `opened_at` を埋め、`gift_events` に `opened` を足す。記録の中身はギフト側に何も写さない。
+
+## push_tokens
 
 | 列 | 型 | 説明 |
 | --- | --- | --- |
 | id | text PK | |
 | user_id | text FK user | |
-| token | text UNIQUE | ExponentPushToken[...] |
+| token | text UNIQUE | Expo のプッシュトークン |
 | platform | text | `ios` / `android` |
 | last_seen_at | text | |
 | created_at | text | |
 
-## 既存の `sakes` テーブルについて
+## 候補の計算（ギフト）
 
-Phase 0 の動作確認用。`tastings` に置き換えるので、次のマイグレーションで削除する（データはない）。
+入力は場面、予算、任意の好みのヒントだけ。記録は使わない（D3）。
 
-## 選定ロジックに必要な読み取り
+1. `status = active` で、価格と送料の合計が予算以下、かつ予算の 6 割以上の酒を取る。2 本に満たなければ下限を外す。
+2. 好みのヒントがあれば、味の軸がヒントに近いものを上げる。「分からない」なら軸が真ん中に近いものを上げる。
+3. 場面で重みを変える。お礼は定番寄り、誕生日は少し特別寄り、なんとなくは価格の低い方寄り。
+4. 2〜3 本を選ぶ時、知名度の軸で散らす。定番と知る人ぞ知るの両方が並ぶようにする。どちらを贈るかは贈る人の感性に委ねるため（コンセプト 2）。
+5. 保存しない。ギフトの確定時に、見せた候補を `gifts.candidates` に残す。
 
-1. `bottles` から `status = active` かつ `price_yen <= budget` を取る（上限は予算、下限は予算の 60% を目安）。
-2. 場面で重みを変える: 誕生日は `fame` の中〜高（少し特別）、お礼は `fame` 低（外さない定番）、なんとなくは価格の低い方を優先。
-3. ヒントがあれば `taste_*` を寄せる。`unknown` なら中庸（3 付近）を優先。
-4. 相手が `recipients.recipient_user_id` を持ち、過去の `tastings.verdict = again` があれば、その `bottle` の軸に寄せる（memo は読まない。verdict と軸だけ）。
-5. 上位 3 本を `gift_candidates` に保存して返す。
+## 今のコードとの差分
+
+Phase 0 の `sakes` テーブルは動作確認用。再構築で削除し、上のテーブルに置き換える。

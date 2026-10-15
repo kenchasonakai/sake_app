@@ -1,164 +1,206 @@
-# ディレクトリ設計
+# アーキテクチャとディレクトリ設計
 
-前提: [concept.md](concept.md) の役割分担。アプリ（apps/mobile）が主役、Web（apps/web）は受け取りリンクと将来の Web 版、API（apps/api）は両方が使う。
+前提: [decisions.md](decisions.md) と [flows.md](flows.md)。
 
-## 全体
+## 全体像
+
+```
+                 ┌──────────────── 公開されるのはここだけ（D7）
+ iPhone/Android ─┤
+ アプリ           │  apps/web（Worker: sake-web）
+                 │   ├─ /g/:token        受け取りページ（Hono JSX、JS なし）
+ ブラウザ ────────┤   ├─ /.well-known/*   Universal Links / App Links の検証ファイル（後で）
+ LINE プレビュー   │   ├─ /                入口（後で Expo の Web 出力）
+                 │   └─ /api/*  ──────┐  そのまま API に渡す
+                 └────────────────────│───────────────────
+                                      │ サービスバインディング env.API
+                                      ▼
+                     apps/api（Worker: sake-api。公開ルートなし）
+                      ├─ /api/*        アプリと将来の Web 版が使う API
+                      └─ /internal/*   Web の Worker だけが呼ぶ API（受け取り）
+                                      │
+                                      ▼
+                                 D1（sake-db）
+```
+
+- アプリの通信先は Web の Worker のオリジンだけ。`/api/*` は Web が中身を見ずに API へ渡す。
+- `/internal/*` は Web が `/api/*` として転送しないので、外からは届かない。受け取りの処理はここに置き、Web のサーバー側からだけ呼ぶ。
+- API の Worker には workers.dev もルートも付けない。外から直接呼べない。
+- 独自ドメインを取ったら Web の Worker に付けるだけで、API 側は変わらない。
+
+## リポジトリ
 
 ```
 sake_app/
 ├─ apps/
-│  ├─ mobile/      Expo（iOS / Android。将来は expo export --platform web で Web 版も）
-│  ├─ api/         Hono on Workers。API 専用。HTML は返さない
-│  └─ web/         Hono JSX on Workers。アプリ不要で開くページ（受け取りリンク）。将来 Expo の Web 出力を public/ から配信
+│  ├─ mobile/      Expo。iOS / Android。将来 expo export --platform web で Web 版も
+│  ├─ api/         Hono + Drizzle + D1。HTML は返さない
+│  └─ web/         Hono JSX。公開の入口。受け取りページと /api 転送
 ├─ packages/
-│  └─ shared/      Zod スキーマと列挙。アプリ・API・Web で共用
-└─ docs/           設計ドキュメント
+│  └─ shared/      Zod スキーマと列挙。アプリ、API、Web で共用
+└─ docs/
 ```
 
-依存の向き: `mobile → shared`, `api → shared`, `web → shared`, `web → api（型のみ。実行時はサービスバインディング）`, `mobile → api（型のみ）`。逆向きは作らない。
+依存の向き: `mobile → shared`、`api → shared`、`web → shared`、`mobile → api` と `web → api` は型だけ。逆向きは作らない。
 
 ## apps/api
 
 ```
 apps/api/
-├─ cloudflare.config.ts    mode（development / staging / production）ごとの Worker 定義
-├─ drizzle/                マイグレーション SQL（drizzle-kit generate の出力。手で編集しない）
+├─ cloudflare.config.ts     mode（development / staging / production）ごとの Worker 定義
+├─ drizzle/                 マイグレーション SQL。drizzle-kit generate の出力で、手で編集しない
 └─ src/
-   ├─ index.ts             Hono アプリの組み立てだけ。routes/* を .route() で束ね、AppType を export
-   ├─ routes/              1 リソース 1 ファイル。入力検証（zValidator）と HTTP の変換だけ
-   │  ├─ bottles.ts        候補カタログの参照
-   │  ├─ gifts.ts          ギフトの作成〜リンク発行〜状態参照
-   │  ├─ recommendations.ts 候補の選定（場面・予算・ヒント → 2〜3 本）
-   │  ├─ claims.ts         受け取り（トークンで参照、住所入力、成人確認）
-   │  ├─ tastings.ts       飲んだ記録
-   │  ├─ me.ts             自分の情報、プッシュトークン登録
-   │  └─ admin/            運営用（注文の手動進行、候補の編集）。role=admin のみ
-   ├─ services/            ドメインロジック。Hono に依存しない純粋な関数
-   │  ├─ recommend.ts      3 軸スコアリング（値段・味・知名度）。数十本ならルールで十分
-   │  ├─ gifts.ts          状態遷移（draft → … → opened）と不変条件
-   │  ├─ claims.ts         トークン検証、住所の保存、注文の生成
-   │  ├─ tastings.ts       記録の保存と「開けたよ」イベントの一回限りの発火
-   │  └─ notifications.ts  イベント → Expo Push / メール
+   ├─ index.ts              組み立てだけ。/api と /internal を束ね、AppType と InternalType を export
+   ├─ routes/
+   │  ├─ public/            /api/* 。アプリと将来の Web 版が使う
+   │  │  ├─ bottles.ts      カタログの参照
+   │  │  ├─ recommendations.ts  候補の計算（ログイン不要、保存しない）
+   │  │  ├─ gifts.ts        贈ったギフトの作成、一覧、詳細、再発行、取り消し、リンクの再表示
+   │  │  ├─ received.ts     もらったギフトの一覧、紐づけ、開けたよ
+   │  │  ├─ tastings.ts     記録
+   │  │  ├─ me.ts           自分の情報、表示名、プッシュトークン
+   │  │  └─ admin.ts        運営用（O4）
+   │  └─ internal/          /internal/* 。Web の Worker だけが呼ぶ
+   │     └─ claims.ts       受け取りページの表示用データ、住所の送信
+   ├─ services/             業務ロジック。Hono に依存しない関数。テストはここに書く
+   │  ├─ recommend.ts       場面・予算・好みのヒントからの候補計算（D3: 記録は使わない）
+   │  ├─ gifts.ts           作成、状態、期限、再発行、取り消し
+   │  ├─ claims.ts          トークン検証、住所の保存、手配の作成
+   │  ├─ linking.ts         受け取る人のアカウントへの紐づけ（3 経路）
+   │  ├─ tastings.ts        記録と開けたよ
+   │  ├─ fulfillment.ts     手配の状態更新（O1 で中身が決まる）
+   │  └─ notify.ts          贈る人へのプッシュ
    ├─ db/
-   │  ├─ index.ts          drizzle(env.DB)
-   │  └─ schema/           テーブル定義。1 ドメイン 1 ファイル（auth.ts, catalog.ts, gifts.ts, tastings.ts, ops.ts）
-   ├─ auth/
-   │  └─ index.ts          Better Auth の設定（drizzle アダプタ、Expo プラグイン、匿名、メール OTP）
+   │  ├─ index.ts
+   │  └─ schema/            auth.ts、catalog.ts、gifts.ts、fulfillment.ts、tastings.ts、devices.ts
+   ├─ auth/index.ts         Better Auth（メール OTP、Expo プラグイン、drizzle アダプタ）
    ├─ middleware/
-   │  ├─ session.ts        セッションを c.var.user に載せる（未ログインは null）
-   │  └─ require.ts        requireUser / requireRole("admin")
+   │  ├─ session.ts         セッションを c.var.user に載せる
+   │  └─ require.ts         requireUser、requireAdmin
    └─ lib/
-      ├─ id.ts             ID 生成（UUID）
-      ├─ token.ts          受け取りトークンの生成と比較
-      └─ errors.ts         HTTPException の薄いラッパ
+      ├─ token.ts           受け取りトークンの生成、ハッシュ、暗号化
+      └─ errors.ts
 ```
 
 ルール:
-- `routes/*` はチェーンで書き、`index.ts` で `.route("/gifts", gifts)` のように束ねる。`export type AppType = typeof app` にすべてのルートが乗る。
-- `services/*` は `db` と引数だけに依存させ、Hono のコンテキストを渡さない。テストはここに書く。
-- 認証が要るルートは `routes` 側で `requireUser` を噛ませる。`services` は「誰が呼んだか」を引数で受ける。
-- 受け取り（claims）は認証なし。トークンが権限そのもの（[auth.md](auth.md)）。
+- `routes/*` は Hono のメソッドチェーンで書き、`index.ts` で `.route()` する。ルートの型は `AppType`（/api）と `InternalType`（/internal）に乗る。
+- `services/*` は db と引数だけに依存する。「誰が」を引数で受け、所有者の確認を service の中で必ず行う。
+- 返却は `packages/shared` の Zod で形を決め、内部の列をそのまま返さない。
+- GET で書き込まない（D5）。
 
-### URL 設計（API）
+### API の一覧
+
+`/api/*`（アプリと将来の Web 版）:
 
 | メソッド | パス | 認証 | 用途 |
 | --- | --- | --- | --- |
-| GET | /bottles, /bottles/:id | 不要 | 候補カタログ参照（公開情報のみ） |
-| POST | /recommendations | 任意 | 場面・予算・ヒント → 候補 2〜3 本 |
-| POST | /gifts | 必要（匿名可） | ギフト下書き作成 |
-| GET | /gifts, /gifts/:id | 必要 | 自分のギフト一覧と詳細（状態、イベント） |
-| POST | /gifts/:id/choose | 必要 | 一本を決める（候補スナップショット保存） |
-| POST | /gifts/:id/message | 必要 | 一言と決めた理由 |
-| POST | /gifts/:id/issue | 必要（本人確認済み） | 受け取りリンク発行。匿名ユーザーはここでサインインを要求 |
-| GET | /claims/:token | 不要 | 受け取りページ用の情報（贈り主の一言、一本の説明、状態）。住所は返さない |
-| POST | /claims/:token | 不要 | 成人確認と住所の送信 → 注文作成。1 回だけ成功 |
-| GET/POST | /tastings | 必要 | 自分の記録。gift_id 付きの初回で「開けたよ」発火 |
-| GET | /me | 必要 | 自分の情報 |
-| PUT | /me/push-token | 必要 | Expo Push トークン登録 |
-| ALL | /auth/* | - | Better Auth のハンドラ |
-| * | /admin/** | role=admin | 注文の手動進行、候補の編集、イベント再送 |
+| GET | /api/health | 不要 | 疎通確認 |
+| ALL | /api/auth/* | - | Better Auth |
+| GET | /api/bottles、/api/bottles/:id | 不要 | カタログ |
+| POST | /api/recommendations | 不要 | 場面・予算・ヒントから候補 2〜3 本を返す。保存しない |
+| POST | /api/gifts | 必要 | 確定。一本、一言、名前、場面、予算、見せた候補を受け取り、ギフトとリンクを作る |
+| GET | /api/gifts | 必要 | 自分が贈ったギフトの一覧と状況 |
+| GET | /api/gifts/:id | 必要（贈った本人） | 詳細と状況 |
+| GET | /api/gifts/:id/link | 必要（贈った本人） | リンクの再表示 |
+| POST | /api/gifts/:id/reissue | 必要（贈った本人） | 期限切れの時に作り直す |
+| POST | /api/gifts/:id/cancel | 必要（贈った本人） | 受け取り前だけ取り消せる |
+| GET | /api/received | 必要 | 自分に紐づいたもらったギフト |
+| POST | /api/received/link | 必要 | 受け取りリンクを貼って紐づける |
+| POST | /api/received/:giftId/opened | 必要（紐づいた本人） | 開けたよを 1 回だけ送る |
+| GET、POST | /api/tastings | 必要 | 自分の記録の一覧、作成。作成時に開けたよを一緒に送れる |
+| GET、PATCH、DELETE | /api/tastings/:id | 必要（本人） | |
+| GET、PATCH | /api/me | 必要 | 自分の情報、既定の表示名 |
+| PUT | /api/me/push-token | 必要 | プッシュトークンの登録 |
+| * | /api/admin/* | admin | 手配の一覧と更新（O4） |
+
+`/internal/*`（Web の Worker だけ）:
+
+| メソッド | パス | 用途 |
+| --- | --- | --- |
+| GET | /internal/claims/:token | 受け取りページに出す情報。状態に応じた出し分け用。住所は返さない |
+| POST | /internal/claims/:token | 住所の送信。1 回だけ成功 |
 
 ## apps/web
 
 ```
 apps/web/
-├─ cloudflare.config.ts    API へのサービスバインディング env.API
-├─ public/                 将来 Expo の Web 出力を置く（静的アセットとして同梱される）
+├─ cloudflare.config.ts     env.API（サービスバインディング）、レート制限
+├─ public/                  後で Expo の Web 出力を置く
 └─ src/
-   ├─ index.tsx            ルートの束ね。/ と /g/:token と /api/* のプロキシ
+   ├─ index.tsx             /api/* の転送、/g/:token、/.well-known/*、/
    ├─ routes/
-   │  ├─ receive.tsx       GET /g/:token, POST /g/:token（フォーム送信 → API の claims へ）
-   │  └─ auth-proxy.ts     /api/auth/* を env.API に転送し Set-Cookie を中継（Web 版が要る時）
-   ├─ pages/               Hono JSX のページと Layout（サーバー描画、JS なし）
-   └─ lib/
-      └─ api.ts            hc<AppType>（fetch = env.API.fetch）
+   │  ├─ receive.tsx        GET /g/:token、POST /g/:token
+   │  └─ well-known.ts      apple-app-site-association、assetlinks.json（Development Build 以降）
+   ├─ pages/                Hono JSX のページ。Layout、受け取り、状況、期限切れ、完了
+   └─ lib/api.ts            /internal 用の型付きクライアント（fetch = env.API.fetch）
 ```
 
 ルール:
-- ブラウザは Web の Worker とだけ話す。API の公開 URL をブラウザに見せない（CORS も Cookie のドメイン問題も避ける）。
-- 受け取りページは JS なしで完結させる（LINE のアプリ内ブラウザで開かれる前提。速さと確実さを優先）。
+- `/api/*` の転送はリクエストをそのまま `env.API.fetch(request)` に渡す。中身を解釈しない。
+- 受け取りページは JS なし。フォームは同じパスへの POST。送信後はリダイレクトで GET に戻す。
+- POST /g/:token はレート制限をかける（Workers のレート制限バインディング）。
 
 ## apps/mobile
 
 ```
 apps/mobile/src/
-├─ app/                    Expo Router。画面の「配置」だけ。ロジックは置かない
-│  ├─ _layout.tsx          Provider（Query、Auth）、フォント、テーマ
+├─ app/                     Expo Router。画面の配置だけ
+│  ├─ _layout.tsx           Provider（Query、Auth）、テーマ
 │  ├─ (tabs)/
-│  │  ├─ index.tsx         ホーム: 「贈る」導線と、贈った・もらった・飲んだの一覧
-│  │  ├─ records.tsx       記録（飲んだ酒）
-│  │  └─ settings.tsx
+│  │  ├─ index.tsx          ホーム。贈る入口と、贈ったギフトの状況
+│  │  ├─ records.tsx        記録。もらった一本もここに出る
+│  │  └─ settings.tsx       アカウント、表示名、通知
 │  ├─ gift/
-│  │  ├─ new.tsx           場面と予算（＋任意のヒント）
-│  │  ├─ [id]/candidates.tsx 候補 2〜3 本と用語なしの説明
-│  │  ├─ [id]/message.tsx  決めた理由 → 一言の下書き
-│  │  ├─ [id]/share.tsx    リンクと LINE 用定型文
-│  │  └─ [id]/index.tsx    状態（届いた・開けた）
+│  │  ├─ new.tsx            G2 場面と予算
+│  │  ├─ candidates.tsx     G3 候補
+│  │  ├─ message.tsx        G4 一言と名前
+│  │  ├─ confirm.tsx        G5〜G6 サインインと確定
+│  │  ├─ [id]/share.tsx     G7 共有
+│  │  └─ [id]/index.tsx     G8 状況
+│  ├─ received/
+│  │  ├─ add.tsx            リンクを貼って紐づけ
+│  │  └─ [id].tsx           もらった一本と開けたよ
 │  ├─ tasting/
-│  │  ├─ new.tsx           記録の入力（?giftId= で「開けたよ」に繋がる）
+│  │  ├─ new.tsx
 │  │  └─ [id].tsx
-│  ├─ bottle/[id].tsx      一本の詳細
-│  └─ auth/                サインイン（メール OTP、Apple / Google）
-├─ features/               機能ごとのまとまり。画面から呼ぶ hooks と部品
-│  ├─ gift/                useCreateGift, CandidateCard, OccasionPicker, BudgetPicker …
-│  ├─ tasting/
-│  ├─ catalog/
-│  └─ auth/                useSession, authClient
-├─ components/             機能に依存しない UI（Button, Sheet, ThemedText …）
+│  ├─ bottle/[id].tsx
+│  └─ auth/sign-in.tsx      メール OTP
+├─ features/                機能ごとの hooks と部品（gift、received、tasting、catalog、auth）
+├─ components/              機能に依存しない UI
 ├─ lib/
-│  ├─ api.ts               hc<AppType>（Cookie を付ける fetch）
-│  ├─ auth-client.ts       Better Auth の Expo クライアント
-│  ├─ query-client.ts
-│  └─ notifications.ts     Expo Push の許可とトークン登録
-└─ constants/              theme, spacing
+│  ├─ api.ts                hc<AppType>。Cookie を付ける fetch
+│  ├─ auth-client.ts        Better Auth の Expo クライアント
+│  ├─ gift-draft.ts         G2〜G4 の入力を端末に持つ（確定前はサーバーに送らない）
+│  └─ notifications.ts
+└─ constants/
 ```
 
 ルール:
-- `app/` のファイルは薄く。データ取得と状態は `features/*/hooks` に置き、画面は組み立てるだけ。
-- API の呼び出しは必ず `lib/api.ts` の型付きクライアントから。URL を文字列で書かない。
-- 入力の検証は `@sake/shared` の Zod を使い、API と同じスキーマで二重に持たない。
+- `app/` は薄く。データ取得と状態は `features/*` に置く。
+- API は `lib/api.ts` の型付きクライアントからだけ呼ぶ。
+- 入力の検証は `@sake/shared` の Zod を使う。
 
 ## packages/shared
 
 ```
 packages/shared/src/
-├─ index.ts
-├─ enums.ts        occasion, sakeType, giftStatus, orderStatus, tasteAxes の列挙
-├─ bottle.ts       Bottle（公開情報）のスキーマ
-├─ gift.ts         CreateGiftInput, ChooseInput, MessageInput, Gift（API の返却）
-├─ recommendation.ts RecommendInput（場面・予算・ヒント）、Candidate
-├─ claim.ts        ClaimView（受け取りページに出す情報）、ClaimInput（成人確認・住所）
-└─ tasting.ts      CreateTastingInput, Tasting
+├─ enums.ts           occasion、giftStatus、fulfillmentStatus、verdict、tasteHint
+├─ bottle.ts          Bottle（公開情報）
+├─ recommendation.ts  RecommendInput、Candidate
+├─ gift.ts            CreateGiftInput、GiftSummary、GiftDetail、GiftDisplayStatus
+├─ claim.ts           ClaimView（受け取りページの出し分け）、ClaimInput（住所など）
+├─ received.ts        ReceivedGift、LinkInput
+└─ tasting.ts         CreateTastingInput、Tasting
 ```
 
-ルール: API の返却型も Zod で定義し、`c.json(parsed)` 前に `schema.parse` する（内部の列を漏らさない）。
+## 環境
 
-## 環境とデプロイ
-
-| mode | api | web | D1 |
+| mode | 公開の入口 | API | D1 |
 | --- | --- | --- | --- |
-| development | sake-api-dev（cf dev, 5173） | sake-web-dev（cf dev, 5174） | ローカル（固定 UUID） |
-| staging | sake-api-staging | sake-web-staging | sake-db-staging |
-| production | sake-api | sake-web | sake-db |
+| development | sake-web-dev、cf dev、5174 番 | sake-api-dev、cf dev、5173 番 | ローカル、固定 UUID |
+| staging | sake-web-staging.＜アカウント＞.workers.dev | sake-api-staging、公開なし | sake-db-staging |
+| production | sake-web、後で独自ドメイン | sake-api、公開なし | sake-db |
 
-デプロイ順は api → web（サービスバインディング先が必要）。秘密情報は `cf deploy --secrets-file`。
+- アプリの `EXPO_PUBLIC_API_URL` は公開の入口のオリジン。開発時は PC の LAN の IP と 5174 番。
+- デプロイは api、web の順。秘密情報は `cf deploy --secrets-file` で渡す。
+- 定期実行は今は使わない（D6）。住所の削除を自動にする段階で API の Worker に Cron を足す。

@@ -1,15 +1,19 @@
 # sake_app
 
-日本酒の記録アプリ。TypeScript のみで iOS / Android 両対応（Mac なし前提）。
+日本酒を知らなくても、日本酒好きの友達に外さない一本を贈れるアプリ。TypeScript のみで iOS / Android 両対応（Mac なし前提）。
+
+設計は docs にある。コードは Phase 0 の骨組みで、docs への追従はこれから（[CLAUDE.md](CLAUDE.md) の「今のコードの状態」）。
 
 ## 設計ドキュメント
 
-- [docs/concept.md](docs/concept.md) コンセプト
-- [docs/architecture.md](docs/architecture.md) ディレクトリ設計と URL 設計
+- [docs/concept.md](docs/concept.md) コンセプトシート
+- [docs/decisions.md](docs/decisions.md) 決定事項と未決事項
+- [docs/flows.md](docs/flows.md) 利用の流れ
+- [docs/architecture.md](docs/architecture.md) 構成、ディレクトリ、API
 - [docs/auth.md](docs/auth.md) 認証・認可
 - [docs/data-model.md](docs/data-model.md) テーブル設計
-- [docs/design-discussion.md](docs/design-discussion.md) UI を決める前の論点
-- [CLAUDE.md](CLAUDE.md) 次の実装者向けの入口と実装の順番
+- [docs/design-discussion.md](docs/design-discussion.md) UI の論点
+- [CLAUDE.md](CLAUDE.md) 実装者向けの入口と再構築の順番
 
 ## 構成
 
