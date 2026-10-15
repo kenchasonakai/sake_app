@@ -74,7 +74,6 @@ user ─┬─< gifts >── bottles
 | reasons | text JSON | 決めた理由のチップ |
 | message | text | 一言 |
 | giver_display_name | text | 受け取りページに出す名前。ギフトごとに変えられる |
-| recipient_label | text? | 贈る人が自分用に付けた相手のメモ（「田中さん」）。贈る人の画面にだけ出し、受け取りページには出さない |
 | status | text | `issued` / `claimed` / `cancelled` |
 | claim_token_hash | text UNIQUE | トークンの SHA-256 |
 | claim_token_enc | text | 再表示用に暗号化したトークン |
