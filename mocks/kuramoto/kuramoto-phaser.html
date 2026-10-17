@@ -1,0 +1,851 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>岩瀬酒造 蔵元カードゲーム</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@800&family=Yuji+Syuku&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap">
+<style>
+/* 卓: 前掛けの紺の帆布。盤面は Phaser のキャンバスに描き、遊び方と結果だけ HTML で重ねる。 */
+:root {
+  color-scheme: dark;
+  --cloth-deep: #0F1829;
+  --cloth: #1A2944;
+  --washi: #F2F1EB;
+  --washi-2: #E5E3D9;
+  --sumi: #1C1E22;
+  --sumi-dim: #5A5D63;
+  --chalk: #E9ECF2;
+  --kin: #E1B243;
+  --kin-deep: #8E6A14;
+  --shu: #C2412A;
+  --ai: #2F5E96;
+  --scrim: rgba(6, 10, 20, .7);
+  --brush: "Yuji Syuku", "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --display: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --body: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { background: var(--cloth-deep); color: var(--chalk); font-family: var(--body); overflow: hidden; }
+.wrap { position: relative; height: 100%; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 8px; }
+#game { width: 100%; height: 100%; }
+#game canvas { border-radius: 14px; box-shadow: 0 18px 40px rgba(0,0,0,.5); }
+.loading { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--brush); font-size: 22px; letter-spacing: .1em; color: var(--chalk); }
+.rotate { position: fixed; left: 0; right: 0; top: 0; z-index: 5; text-align: center; font-size: 13px; padding: calc(8px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px)); background: var(--cloth); }
+@media (orientation: landscape) { .rotate { display: none; } }
+.overlay { position: fixed; inset: 0; z-index: 10; background: var(--scrim); display: grid; place-items: center; padding: 16px max(16px, env(safe-area-inset-right, 0px)) 16px max(16px, env(safe-area-inset-left, 0px)); }
+.panel { background: var(--washi); color: var(--sumi); border-radius: 14px; padding: 18px 20px; width: min(640px, 100%); max-height: 100%; overflow: auto; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 20px 40px rgba(0,0,0,.5); }
+.panel h2 { margin: 0; font-family: var(--brush); font-weight: 400; font-size: 26px; letter-spacing: .08em; }
+.panel p, .panel li { font-size: 14px; line-height: 1.6; margin: 0; }
+.panel ol { margin: 0; padding-left: 20px; display: grid; gap: 2px; }
+.note { font-size: 12px; color: var(--sumi-dim); }
+.big { font-size: 44px; font-weight: 700; color: var(--kin-deep); line-height: 1; }
+.rank { font-family: var(--brush); font-size: 32px; }
+.zukan { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px; }
+.zukan div { background: #fff; border-radius: 8px; padding: 6px 8px; font-size: 12px; }
+.zukan b { font-family: var(--display); font-size: 14px; display: block; }
+.share { width: 100%; min-height: 60px; font: inherit; font-size: 13px; border: 1px solid var(--washi-2); border-radius: 8px; padding: 6px 8px; background: #fff; color: var(--sumi); resize: none; }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.btn { border: 0; border-radius: 999px; background: var(--sumi); color: var(--washi); padding: 9px 22px; font: inherit; font-weight: 700; cursor: pointer; }
+.btn.light { background: transparent; color: var(--sumi); border: 1px solid var(--sumi); }
+.btn:focus-visible { outline: 2px solid var(--kin); outline-offset: 2px; }
+a { color: var(--ai); font-weight: 700; }
+</style>
+
+<div class="rotate">横向きにすると、盤面が大きく表示されます</div>
+<div class="wrap"><div id="game"></div><div class="loading" id="loading">蔵を開けています…</div></div>
+<div id="overlay"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js"></script>
+<script>
+(() => {
+// =====================================================================
+// ルール（画面から切り離した素の関数。数字は設計書の仮の値）
+// =====================================================================
+const RICES = ["山田錦", "五百万石", "総の舞", "きたしずく", "愛山"];
+const PRICE = { "山田錦": 2, "五百万石": 1, "総の舞": 1, "きたしずく": 1, "愛山": 1, "麹": 1, "酵母": 1 };
+const DECK = { "山田錦": 8, "五百万石": 7, "総の舞": 5, "きたしずく": 5, "愛山": 3, "麹": 14, "酵母": 10 };
+const SAKES = [
+  { id: "gohyaku", name: "i240 五百万石", v: "i240\n五百万石", needs: { "五百万石": 1, "麹": 1, "酵母": 1 }, gauge: 2, rev: 6, spec: "船頭", tags: ["i240"], say: "i240の原点。美酒アワード2026フレンチ部門で三ツ星。" },
+  { id: "fusa", name: "i240 総の舞", v: "i240\n総の舞", needs: { "総の舞": 1, "麹": 1, "酵母": 1 }, gauge: 2, rev: 7, spec: "船頭", tags: ["i240"], say: "千葉県でしか栽培されていない酒米で造る。" },
+  { id: "aiyama", name: "i240 愛山", v: "i240\n愛山", needs: { "愛山": 1, "麹": 1, "酵母": 1 }, gauge: 2, rev: 8, spec: "船頭", tags: ["i240"], say: "希少な酒米。上品な甘みと果実の香り。" },
+  { id: "kita", name: "i240 きたしずく", v: "i240\nきたしずく", needs: { "きたしずく": 1, "麹": 1, "酵母": 1 }, gauge: 2, rev: 7, spec: "船頭", tags: ["i240", "夏酒"], say: "北海道産の酒米で造る夏酒。" },
+  { id: "karakuchi", name: "山廃純米辛口", v: "山廃純米辛口", needs: { ANY: 1, "麹": 1 }, gauge: 4, rev: 12, spec: "酛屋", tags: ["山廃"], say: "冷やからお燗まで。全国燗酒コンテスト2021金賞。" },
+  { id: "yamahai240", name: "i240 山廃・山田錦", v: "i240\n山廃山田錦", needs: { "山田錦": 1, "麹": 1, "酵母": 1 }, gauge: 4, rev: 12, spec: "酛屋", tags: ["i240", "山廃"], say: "全国燗酒コンテスト2024金賞。" },
+  { id: "daiginjo", name: "山廃純米大吟醸", v: "山廃純米大吟醸", needs: { "山田錦": 2, "麹": 1 }, gauge: 6, rev: 18, spec: "酛屋", tags: ["山廃"], say: "ロバート・パーカーの評価で95点（2017年）。" },
+  { id: "nakagumi", name: "純米大吟醸 中汲み", v: "純米大吟醸\n中汲み", needs: { "山田錦": 3, "麹": 1 }, gauge: 6, rev: 22, spec: "船頭", tags: ["山田錦30%"], say: "兵庫県産山田錦を30%まで磨き、搾りの中ほどを取り分けた酒。" },
+  { id: "koshu20", name: "秘蔵古酒二十年", v: "秘蔵古酒\n二十年", needs: { ANY: 1, "麹": 1 }, gauge: 8, rev: 22, spec: "蔵守", tags: ["古酒"], say: "20年以上の熟成。チーズやチョコレートにも合う。" },
+  { id: "heiwa", name: "平・和の調べ", v: "平・和の\n調べ", needs: { ANY: 2, "麹": 1 }, gauge: 6, rev: 16, spec: "蔵守", tags: ["古酒"], say: "6種の古酒をソムリエがブレンド。鴨のローストに。" },
+];
+const SAKE = Object.fromEntries(SAKES.map(s => [s.id, s]));
+const ROLES = {
+  "蔵人": { fee: 2, kind: "any", k: "蔵", eff: "どの酒でも1マス" },
+  "酛屋": { fee: 4, kind: "spec", k: "酛", eff: "山廃の酒で2マス、ほかは0" },
+  "船頭": { fee: 4, kind: "spec", k: "船", eff: "i240と中汲みで2マス、ほかは0" },
+  "蔵守": { fee: 4, kind: "spec", k: "守", eff: "古酒で2マス、ほかは0" },
+  "麹屋": { fee: 4, kind: "ability", k: "麹", eff: "仕込みの麹が1枚少なくて済む" },
+  "仕入れ係": { fee: 4, kind: "ability", k: "仕", eff: "毎ターン山札から1枚多く引く" },
+  "帳場": { fee: 4, kind: "ability", k: "帳", eff: "取引先で1ターン1枚まで無料" },
+  "営業": { fee: 4, kind: "ability", k: "営", eff: "同じ酒の値下がりが1段ゆるい" },
+};
+const RECRUITS = [["蔵人", "大原 拓", "夏は海の家、冬は蔵で働く"], ["蔵人", "勝浦 ひなた", "蔵見学で日本酒に目覚めた"], ["蔵人", "布施 健吾", "米農家。田んぼが休みの冬に"], ["蔵人", "鵜原 奈央", "去年まで東京で会社員"], ["蔵人", "岩和田 大地", "地元の高校を出たばかり"], ["蔵人", "白浜 律", "体を動かすのが好き"],
+  ["酛屋", "関 正造", "山廃の酛を育てて三十年"], ["酛屋", "堀田 早苗", "酛は子育てと同じ、が口癖"], ["船頭", "浜野 修", "搾りの加減は手で覚えた"], ["船頭", "川名 透", "槽口から目を離さない"], ["蔵守", "古川 静", "古いタンクの顔色が分かる"], ["蔵守", "蔵持 栄一", "二十年ものの酒の番人"],
+  ["麹屋", "室井 恵", "麹室の温度は体が覚えている"], ["仕入れ係", "米倉 賢", "農家さんとの付き合いが長い"], ["帳場", "吉野 由紀", "帳簿と天気予報を毎朝見る"], ["営業", "早瀬 航", "どの酒も一言で売り込める"]];
+const FIRST_CREW = [["蔵人", "浜田 湊", "網元の家の三男"], ["蔵人", "岩崎 しのぶ", "朝が早いのが自慢"]];
+const EVENTS = [
+  { id: "summit", w: 1, kind: "嬉しいこと", title: "サミットの乾杯酒", eff: "次に出荷する酒の売上が1.5倍", origin: "1986年の東京サミットの晩餐会で乾杯酒に選ばれた", buff: { k: "mult", v: 1.5, label: "次の出荷 ×1.5" } },
+  { id: "bishu", w: 1, kind: "嬉しいこと", title: "美酒アワードの三ツ星", eff: "次に出荷するi240の売上が1.5倍", origin: "i240 五百万石が2026年にフレンチ部門で三ツ星", buff: { k: "mult", v: 1.5, tag: "i240", label: "次のi240 ×1.5" } },
+  { id: "kanzake", w: 1, kind: "嬉しいこと", title: "燗酒コンテスト金賞", eff: "次に出荷する山廃の酒の売上が1.5倍", origin: "山廃純米辛口（2021年）とi240 山廃・山田錦（2024年）が金賞", buff: { k: "mult", v: 1.5, tag: "山廃", label: "次の山廃 ×1.5" } },
+  { id: "parker", w: 1, kind: "嬉しいこと", title: "パーカーポイント95点", eff: "次に出荷する山廃純米大吟醸の売上が2倍", origin: "山廃純米大吟醸が2017年に95点", buff: { k: "mult", v: 2, only: "daiginjo", label: "次の大吟醸 ×2" } },
+  { id: "crowd", w: 1, kind: "嬉しいこと", title: "クラファン大成功", eff: "好きな素材を2枚、無料でもらえる", origin: "2026年の古酒のクラウドファンディングが、目標30万円に対し約229万円を集めた" },
+  { id: "nanbu", w: 2, kind: "嬉しいこと", title: "南部から応援", eff: "このターンだけ蔵人が1人増える（給料なし）", origin: "南部から来た蔵人が仕込みをしている" },
+  { id: "export", w: 2, kind: "嬉しいこと", title: "海外の商談がまとまる", eff: "すぐ5両もらう", origin: "海外への出荷に取り組んでいる" },
+  { id: "magazine", w: 2, kind: "嬉しいこと", title: "雑誌に載る", eff: "次に出荷する酒の売上が3両増える", origin: "架空", buff: { k: "add", v: 3, label: "次の出荷 +3両" } },
+  { id: "harvest", w: 2, kind: "嬉しいこと", title: "米がよく取れた", eff: "山札から2枚引く", origin: "架空" },
+  { id: "visit", w: 2, kind: "嬉しいこと", title: "蔵見学のお客さん", eff: "すぐ2両もらう", origin: "架空" },
+  { id: "riceup", w: 2, kind: "トラブル", title: "酒米の値上がり", eff: "3ターンの間、取引先の米が2倍", origin: "2026年、酒米の価格が2倍近くに上がった" },
+  { id: "breakdown", w: 2, kind: "トラブル", title: "機械の故障", eff: "2両払うか、マスを1つ戻すかを選ぶ", origin: "架空" },
+  { id: "typhoon", w: 2, kind: "トラブル", title: "台風で停電", eff: "このターン、置ける人が1人減る", origin: "架空" },
+  { id: "quit", w: 2, kind: "トラブル", title: "離職", eff: "一番最近雇った人が辞める", origin: "架空" },
+  { id: "badkoji", w: 1, kind: "トラブル", title: "麹の出来が悪い", eff: "手札の麹を1枚捨てる", origin: "架空" },
+  { id: "interview", w: 2, kind: "選ぶ札", title: "取材の依頼", eff: "受けると置ける人が1人減り、次の出荷が+4両", origin: "架空" },
+  { id: "newrice", w: 2, kind: "選ぶ札", title: "新しい酒米の提案", eff: "3両払えば、好きな米を2枚もらえる", origin: "架空" },
+  { id: "tasting", w: 2, kind: "選ぶ札", title: "試飲会への出店", eff: "2両払えば、次の出荷が1.5倍", origin: "架空" },
+];
+const TURNS = 20, HAND_MAX = 5, BREW_MAX = 3, SALARY = 1;
+const RANKS = [[170, "S"], [140, "A"], [110, "B"], [-Infinity, "C"]]; // 仮
+const SHOP_URL = "https://iwanoi.base.ec/";
+const isRice = m => RICES.includes(m);
+const shortRice = m => ({ "山田錦": "山", "五百万石": "五", "総の舞": "総", "きたしずく": "北", "愛山": "愛" }[m]);
+
+function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function shuffle(arr, R) { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; }
+let S, R, uid = 0; const nid = () => ++uid;
+
+function baseState(seed) {
+  R = rng(seed);
+  return { seed, turn: 1, money: 12,
+    deck: shuffle(Object.entries(DECK).flatMap(([m, n]) => Array.from({ length: n }, () => m)), R), discard: [], hand: [],
+    rdeck: shuffle(RECRUITS.map(([role, name, line]) => ({ id: nid(), role, name, line })), R), rdiscard: [], field: [],
+    hired: FIRST_CREW.map(([role, name, line]) => ({ id: nid(), role, name, line, at: 0 })),
+    brew: [], assign: {}, ships: {}, buff: null, riceUp: 0, event: null, pending: null, temp: null, placeMinus: 0,
+    buysLeft: 2, freeBuy: false, kojiFree: false, refreshed: false, log: [], selected: null, over: null, hint: "" };
+}
+function drawCard() { if (!S.deck.length) { if (!S.discard.length) return null; S.deck = shuffle(S.discard, R); S.discard = []; } return S.deck.pop(); }
+function fillField() { while (S.field.length < 3) { if (!S.rdeck.length) { if (!S.rdiscard.length) break; S.rdeck = shuffle(S.rdiscard, R); S.rdiscard = []; } S.field.push(S.rdeck.pop()); } }
+const has = role => S.hired.some(p => p.role === role);
+function newGame(seed) { S = baseState(seed); for (let i = 0; i < 3; i++) S.hand.push({ id: nid(), m: drawCard(), bought: false }); fillField(); startTurn(); }
+function sampleGame() {
+  S = baseState(7);
+  const take = m => { const i = S.deck.indexOf(m); if (i >= 0) S.deck.splice(i, 1); return m; };
+  const pick = role => S.rdeck.splice(S.rdeck.findIndex(c => c.role === role), 1)[0];
+  S.turn = 7; S.money = 18;
+  S.hired.push({ ...pick("酛屋"), at: 3 }, { ...pick("営業"), at: 5 });
+  S.field = [pick("蔵守"), pick("蔵人"), pick("船頭")];
+  S.brew = [{ id: "karakuchi", filled: 2 }, { id: "fusa", filled: 0 }, { id: "koshu20", filled: 3 }];
+  S.ships = { gohyaku: 2, karakuchi: 1, aiyama: 1 };
+  S.log = [{ id: "gohyaku", v: 6 }, { id: "aiyama", v: 8 }, { id: "gohyaku", v: 4 }, { id: "karakuchi", v: 12 }];
+  ["山田錦", "麹", "酵母", "五百万石"].forEach(m => S.hand.push({ id: nid(), m: take(m), bought: false }));
+  for (let i = 0; i < 14; i++) S.discard.push(S.deck.pop());
+  S.event = EVENTS.find(e => e.id === "kanzake"); S.buff = { ...S.event.buff };
+  S.hint = "7ターン目の見本です。詰所の駒を酒の札へドラッグすると置けます。";
+}
+function startTurn() {
+  Object.assign(S, { buysLeft: 2, freeBuy: has("帳場"), kojiFree: has("麹屋"), refreshed: false, placeMinus: 0, temp: null, pending: null, selected: null });
+  const total = EVENTS.reduce((a, e) => a + e.w, 0); let r = R() * total, ev = EVENTS[0];
+  for (const e of EVENTS) { r -= e.w; if (r < 0) { ev = e; break; } }
+  S.event = ev; const note = applyEvent(ev);
+  const n = 2 + (has("仕入れ係") ? 1 : 0), got = [];
+  for (let i = 0; i < n; i++) { const m = drawCard(); if (m) { S.hand.push({ id: nid(), m, bought: false }); got.push(m); } }
+  S.hint = `${got.length ? got.join("・") + "を引きました。" : "山札が尽きました。"}${note ? " " + note : ""}`;
+  for (const pid of Object.keys(S.assign)) if (!S.brew.some(b => b.id === S.assign[pid]) || !S.hired.some(p => String(p.id) === pid)) delete S.assign[pid];
+}
+function setBuff(b) { if (S.buff) return "すでに出荷の効果を持っているので、何も起きません。"; S.buff = { ...b }; return ""; }
+function applyEvent(ev) {
+  switch (ev.id) {
+    case "summit": case "bishu": case "kanzake": case "parker": case "magazine": return setBuff(ev.buff);
+    case "crowd": S.pending = { type: "pick2", left: 2 }; return "";
+    case "nanbu": S.temp = { id: "temp", role: "蔵人", name: "南部の応援", line: "このターンだけ手伝う", temp: true }; return "";
+    case "export": S.money += 5; return "";
+    case "harvest": for (let i = 0; i < 2; i++) { const m = drawCard(); if (m) S.hand.push({ id: nid(), m, bought: false }); } return "";
+    case "visit": S.money += 2; return "";
+    case "riceup": S.riceUp = 3; return "";
+    case "breakdown": if (S.money < 2 && !S.brew.some(b => b.filled > 0)) return "払えず戻すマスもないので、何も起きません。"; S.pending = { type: "breakdown" }; return "";
+    case "typhoon": S.placeMinus += 1; return "";
+    case "quit": { const later = S.hired.filter(p => p.at > 0); if (!later.length) return "最初の蔵人しかいないので、何も起きません。";
+      const last = later.reduce((a, b) => (b.at >= a.at ? b : a)); S.hired = S.hired.filter(p => p !== last); delete S.assign[last.id]; S.rdiscard.push(last); return `${last.role}の${last.name}さんが辞めました。`; }
+    case "badkoji": { const i = S.hand.findIndex(c => c.m === "麹"); if (i >= 0) { const [c] = S.hand.splice(i, 1); if (!c.bought) S.discard.push(c.m); return "麹を1枚捨てました。"; } return "麹がないので、何も起きません。"; }
+    case "interview": S.pending = { type: "interview" }; return "";
+    case "newrice": if (S.money < 3) return "払えないので見送りました。"; S.pending = { type: "newrice" }; return "";
+    case "tasting": if (S.money < 2) return "払えないので見送りました。"; S.pending = { type: "tasting" }; return "";
+  }
+  return "";
+}
+const workers = () => [...S.hired.filter(p => ROLES[p.role].kind !== "ability"), ...(S.temp ? [S.temp] : [])];
+const placeLimit = () => Math.max(0, workers().length - S.placeMinus);
+const assignedCount = () => Object.keys(S.assign).length;
+const personOf = pid => String(pid) === "temp" ? S.temp : S.hired.find(p => String(p.id) === String(pid));
+function marksBy(p, sid) { const k = ROLES[p.role].kind; if (k === "any") return 1; if (k === "spec") return SAKE[sid].spec === p.role ? 2 : 0; return 0; }
+function planned(sid) { let n = 0; for (const [pid, s] of Object.entries(S.assign)) if (s === sid) { const p = personOf(pid); if (p) n += marksBy(p, sid); } return n; }
+function decayRate(id) { const n = S.ships[id] || 0; const st = has("営業") ? [1, 1, .8] : [1, .8, .6]; return st[Math.min(n, 2)]; }
+const buffApplies = (b, s) => (!b.tag && !b.only) || (b.tag && s.tags.includes(b.tag)) || b.only === s.id;
+const priceOf = m => PRICE[m] * (S.riceUp > 0 && isRice(m) ? 2 : 1);
+const salaryTotal = () => S.hired.length * SALARY;
+function payPlan(sake) {
+  const needs = { ...sake.needs }; if (S.kojiFree && needs["麹"]) needs["麹"] -= 1;
+  const pool = [...S.hand], pay = [], miss = [];
+  for (const m of ["麹", "酵母", ...RICES]) for (let i = 0; i < (needs[m] || 0); i++) { const j = pool.findIndex(c => c.m === m); if (j >= 0) pay.push(pool.splice(j, 1)[0]); else miss.push(m); }
+  for (let i = 0; i < (needs.ANY || 0); i++) { const c = pool.filter(c => isRice(c.m)).sort((a, b) => (a.m === "山田錦") - (b.m === "山田錦"))[0]; if (c) { pay.push(c); pool.splice(pool.indexOf(c), 1); } else miss.push("米"); }
+  return { pay, miss, kojiSaved: S.kojiFree && sake.needs["麹"] > 0 };
+}
+const canStart = s => !S.brew.some(b => b.id === s.id) && S.brew.length < BREW_MAX && !payPlan(s).miss.length;
+const needList = s => Object.entries(s.needs).flatMap(([m, n]) => Array.from({ length: n }, () => m === "ANY" ? "米" : m));
+
+// 操作（文字列を返すと画面が短く知らせる）
+const Act = {
+  hire(cid) { const i = S.field.findIndex(c => c.id === cid); const c = S.field[i]; const fee = ROLES[c.role].fee;
+    if (S.money < fee) return "契約金が足りません。"; S.money -= fee; S.field.splice(i, 1); S.hired.push({ ...c, at: S.turn }); fillField(); return `${c.role}の${c.name}さんを雇いました。`; },
+  refresh() { if (S.refreshed || S.money < 1) return "入れ替えは1ターン1回、1両です。"; S.money -= 1; S.refreshed = true; S.rdiscard.push(...S.field); S.field = []; fillField(); return ""; },
+  buy(m) { if (S.buysLeft <= 0) return "取引先は1ターン2枚までです。"; const p = S.freeBuy ? 0 : priceOf(m); if (S.money < p) return "お金が足りません。";
+    S.money -= p; S.freeBuy = false; S.buysLeft -= 1; S.hand.push({ id: nid(), m, bought: true }); return ""; },
+  start(id) { const s = SAKE[id]; const plan = payPlan(s); if (plan.miss.length) return `${plan.miss.join("・")}が足りません。`;
+    for (const c of plan.pay) { S.hand.splice(S.hand.indexOf(c), 1); if (!c.bought) S.discard.push(c.m); }
+    if (plan.kojiSaved) S.kojiFree = false; S.brew.push({ id, filled: 0 }); return ""; },
+  quit(id) { S.brew = S.brew.filter(b => b.id !== id); for (const pid of Object.keys(S.assign)) if (S.assign[pid] === id) delete S.assign[pid]; return "仕込みをやめました。"; },
+  place(pid, sid) { pid = String(pid); if (!(pid in S.assign) && assignedCount() >= placeLimit()) return `このターン置けるのは${placeLimit()}人までです。`;
+    S.assign[pid] = sid; const p = personOf(pid); return marksBy(p, sid) === 0 ? `${p.role}はこの酒ではマスを埋められません。` : ""; },
+  unplace(pid) { delete S.assign[String(pid)]; return ""; },
+  resolve(kind, arg) {
+    const P = S.pending; if (!P) return "";
+    if (P.type === "pick2") { S.hand.push({ id: nid(), m: arg, bought: true }); if (--P.left <= 0) S.pending = null; }
+    else if (P.type === "breakdown") { if (kind === "pay") S.money -= 2; else { const b = S.brew.find(x => x.id === arg); if (b && b.filled > 0) b.filled -= 1; } S.pending = null; }
+    else if (P.type === "interview") { S.pending = null; if (kind === "yes") { S.placeMinus += 1; const keys = Object.keys(S.assign); while (keys.length > placeLimit()) delete S.assign[keys.pop()]; return setBuff({ k: "add", v: 4, label: "次の出荷 +4両" }); } }
+    else if (P.type === "newrice") { if (kind === "no") S.pending = null; else if (kind === "pay") { S.money -= 3; P.paid = true; P.left = 2; } else { S.hand.push({ id: nid(), m: arg, bought: true }); if (--P.left <= 0) S.pending = null; } }
+    else if (P.type === "tasting") { S.pending = null; if (kind === "yes") { S.money -= 2; return setBuff({ k: "mult", v: 1.5, label: "次の出荷 ×1.5" }); } }
+    return "";
+  },
+  fill() { for (const b of S.brew) b.filled = Math.min(SAKE[b.id].gauge, b.filled + planned(b.id)); },
+  ship() {
+    const done = S.brew.filter(b => b.filled >= SAKE[b.id].gauge).sort((a, b) => SAKE[b.id].rev * decayRate(b.id) - SAKE[a.id].rev * decayRate(a.id));
+    const results = [];
+    for (const b of done) {
+      const s = SAKE[b.id], rate = decayRate(b.id); let v = s.rev * rate; const calc = [`${s.rev}両`];
+      if (rate < 1) calc.push(`${S.ships[b.id] + 1}回目 ${Math.round(rate * 100)}%`);
+      if (S.buff && buffApplies(S.buff, s)) { calc.push(S.buff.label.split(" ").pop()); v = S.buff.k === "mult" ? v * S.buff.v : v + S.buff.v; S.buff = null; }
+      v = Math.floor(v); S.money += v; S.ships[b.id] = (S.ships[b.id] || 0) + 1; S.log.push({ id: b.id, v }); results.push({ s, v, calc: calc.join(" → ") });
+    }
+    S.brew = S.brew.filter(b => !done.includes(b));
+    for (const pid of Object.keys(S.assign)) if (!S.brew.some(b => b.id === S.assign[pid])) delete S.assign[pid];
+    return results;
+  },
+  discard(ids) { for (const id of ids) { const i = S.hand.findIndex(c => c.id === id); const [c] = S.hand.splice(i, 1); if (!c.bought) S.discard.push(c.m); } },
+  salary() { const sal = salaryTotal(); if (S.money < sal) { S.over = { kind: "bankrupt", turn: S.turn }; return; }
+    S.money -= sal; if (S.riceUp > 0) S.riceUp -= 1; if (S.turn >= TURNS) { S.over = { kind: "finish" }; return; } S.turn += 1; startTurn(); },
+};
+
+// =====================================================================
+// 盤面（Phaser）
+// =====================================================================
+const W = 1280, H = 720, DPR = 2;
+const C = { cloth: 0x1A2944, cloth2: 0x24385C, deep: 0x111C31, washi: 0xF2F1EB, washi2: 0xE5E3D9, sumi: 0x1C1E22, shu: 0xC2412A, kin: 0xE1B243, kinDeep: 0x8E6A14,
+  sugi: 0x5D7A38, ai: 0x2F5E96, glow: 0xF3D27A, wood: 0xD3A96E, woodDeep: 0x8B6234, good: 0x8FCB8A, back: 0x263B63, backEdge: 0x3A5384 };
+const T = { sumi: "#1C1E22", dim: "#5A5D63", chalk: "#E9ECF2", chalkDim: "#A9B4C7", kinDeep: "#8E6A14", shu: "#C2412A", red: "#FF9C8A", white: "#FFFFFF" };
+const F = { body: '"Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", sans-serif', mincho: '"Shippori Mincho B1", "Hiragino Mincho ProN", serif', brush: '"Yuji Syuku", "Shippori Mincho B1", serif' };
+const ROT = d => d * Math.PI / 180;
+
+class Board extends Phaser.Scene {
+  constructor() { super("board"); this.dyn = []; this.anim = {}; this.busy = false; this.modal = null; this.confirmQuit = null; }
+
+  create() {
+    this.cameras.main.setZoom(DPR).centerOn(W / 2, H / 2);
+    this.makeTextures();
+    this.drawCloth();
+    this.input.dragDistanceThreshold = 8;
+    this.input.on("dragstart", (p, o) => { if (!o.getData("pid")) return; this.dragging = true; o.setDepth(500); this.tweens.add({ targets: o, scale: 1.2, duration: 100 }); this.showGlows(true); });
+    this.input.on("drag", (p, o, x, y) => { o.x = x; o.y = y; });
+    this.input.on("drop", (p, o, zone) => { const sid = zone.getData("sid"); if (!sid) return; this.say(Act.place(o.getData("pid"), sid)); o.setData("dropped", true); });
+    this.input.on("dragend", (p, o, dropped) => {
+      this.showGlows(false);
+      if (!dropped && o.getData("placed")) Act.unplace(o.getData("pid"));
+      this.time.delayedCall(30, () => { this.dragging = false; this.render(); });
+    });
+    this.particles = this.add.particles(0, 0, "coin", { speed: { min: 180, max: 380 }, angle: { min: 200, max: 340 }, gravityY: 600, lifespan: 900, scale: { start: 1, end: .5 }, rotate: { min: 0, max: 360 }, emitting: false }).setDepth(900);
+    this.render();
+  }
+
+  // ---------- 下ごしらえ ----------
+  makeTextures() {
+    const g = this.make.graphics({ x: 0, y: 0, add: false });
+    g.fillStyle(C.kinDeep, 1); g.fillEllipse(10, 7, 20, 14); g.fillStyle(C.kin, 1); g.fillEllipse(10, 6, 18, 11); g.generateTexture("coin", 20, 14); g.clear();
+    g.fillStyle(0xffffff, 1); g.fillCircle(4, 4, 4); g.generateTexture("spark", 8, 8); g.destroy();
+  }
+  drawCloth() {
+    const g = this.add.graphics().setDepth(-10);
+    g.fillGradientStyle(C.cloth2, C.cloth2, C.deep, C.deep, 1); g.fillRect(0, 0, W, H);
+    g.lineStyle(1, 0xffffff, 0.03);
+    for (let y = 0; y < H; y += 5) g.lineBetween(0, y, W, y);
+    for (let x = 0; x < W; x += 5) g.lineBetween(x, 0, x, H);
+    // 自分の蔵の下に敷いた板
+    g.fillStyle(0x000000, .16); g.fillRoundedRect(272, 266, 700, 264, 14);
+  }
+  keep(o) { this.dyn.push(o); return o; }
+  clear() { for (const o of this.dyn) o.destroy(); this.dyn = []; }
+  text(x, y, str, size, color = T.chalk, o = {}) {
+    return this.add.text(x, y, str, { fontFamily: o.font || F.body, fontSize: `${size}px`, color, fontStyle: o.bold ? "bold" : "normal", align: o.align || "left",
+      wordWrap: o.wrap ? { width: o.wrap, useAdvancedWrap: true } : undefined, lineSpacing: o.ls ?? 2, resolution: DPR }).setOrigin(o.ox ?? 0, o.oy ?? 0);
+  }
+  // 中心基準の札（影つき）
+  cardBox(cx, cy, w, h, o = {}) {
+    const c = this.add.container(cx, cy);
+    const g = this.add.graphics();
+    g.fillStyle(0x000000, .32); g.fillRoundedRect(-w / 2 + 2, -h / 2 + 4, w, h, o.r ?? 10);
+    g.fillStyle(o.fill ?? C.washi, 1); g.fillRoundedRect(-w / 2, -h / 2, w, h, o.r ?? 10);
+    if (o.band) { g.fillStyle(o.band, 1); g.fillRoundedRect(-w / 2, -h / 2, w, 8, { tl: o.r ?? 10, tr: o.r ?? 10, bl: 0, br: 0 }); }
+    if (o.ring) { g.lineStyle(3, o.ring, 1); g.strokeRoundedRect(-w / 2 - 2, -h / 2 - 2, w + 4, h + 4, (o.r ?? 10) + 2); }
+    c.add(g); c.setData("w", w).setData("h", h);
+    return c;
+  }
+  hit(c, w, h, extra = {}) { c.setInteractive({ hitArea: new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h), hitAreaCallback: Phaser.Geom.Rectangle.Contains, useHandCursor: true, ...extra }); return c; }
+  backStack(x, y, w, h, n, count) {
+    const c = this.add.container(x, y);
+    for (let i = Math.min(n, 3) - 1; i >= 0; i--) {
+      const g = this.add.graphics();
+      g.fillStyle(0x000000, .3); g.fillRoundedRect(i * 3 + 2, i * 3 + 3, w, h, 8);
+      g.fillStyle(C.back, 1); g.fillRoundedRect(i * 3, i * 3, w, h, 8); g.lineStyle(2, C.backEdge, 1); g.strokeRoundedRect(i * 3, i * 3, w, h, 8);
+      g.fillStyle(0x4E6A2C, 1); g.fillCircle(i * 3 + w / 2, i * 3 + h / 2, Math.min(w, h) * .26); g.fillStyle(0x7D9B4C, 1); g.fillCircle(i * 3 + w / 2, i * 3 + h / 2, Math.min(w, h) * .21);
+      c.add(g);
+    }
+    if (count != null) { const b = this.add.graphics(); b.fillStyle(C.sumi, 1); b.fillRoundedRect(w - 6, h - 4, 30, 18, 9); c.add(b); c.add(this.text(w + 9, h + 5, String(count), 11, T.chalk, { ox: .5, oy: .5, bold: true })); }
+    return c;
+  }
+  koban(x, y, v, s = 1) {
+    const c = this.add.container(x, y), w = 70 * s, h = 34 * s;
+    const g = this.add.graphics(); g.fillStyle(C.kinDeep, 1); g.fillEllipse(0, 2 * s, w, h); g.fillStyle(C.kin, 1); g.fillEllipse(0, 0, w, h); g.fillStyle(0xFFF1C2, .5); g.fillEllipse(-w * .18, -h * .2, w * .4, h * .3);
+    c.add(g); c.add(this.text(0, 0, `${v}両`, 16 * s, T.sumi, { ox: .5, oy: .5, bold: true }));
+    return c;
+  }
+  koma(x, y, p, size = 1) {
+    const r = ROLES[p.role], w = 40 * size, h = 46 * size, c = this.add.container(x, y);
+    const pts = [[0, -h / 2], [w * .42, -h * .3], [w / 2, h / 2], [-w / 2, h / 2], [-w * .42, -h * .3]].map(([a, b]) => new Phaser.Math.Vector2(a, b));
+    const g = this.add.graphics();
+    g.fillStyle(0x000000, .35); g.fillPoints(pts.map(v => new Phaser.Math.Vector2(v.x + 2, v.y + 3)), true);
+    const base = p.temp ? 0x9FB4D2 : r.kind === "ability" ? C.kin : C.wood, deep = p.temp ? 0x6B83A6 : r.kind === "ability" ? C.kinDeep : C.woodDeep;
+    g.fillStyle(deep, 1); g.fillPoints(pts, true);
+    g.fillStyle(base, 1); g.fillPoints(pts.map(v => new Phaser.Math.Vector2(v.x * .86, v.y * .86 - 1)), true);
+    c.add(g); c.add(this.text(0, 4 * size, p.temp ? "南" : r.k, 22 * size, T.sumi, { font: F.brush, ox: .5, oy: .5 }));
+    c.setData("pid", String(p.id));
+    return c;
+  }
+  marble(x, y, state, r = 13) {
+    const g = this.add.graphics({ x, y });
+    if (state === "on") { g.fillStyle(0x000000, .25); g.fillCircle(1, 2, r); g.fillStyle(0x1C3E6B, 1); g.fillCircle(0, 0, r); g.fillStyle(C.ai, 1); g.fillCircle(-1, -1, r * .85); g.fillStyle(0x7FB0E3, 1); g.fillCircle(-3, -3, r * .5); g.fillStyle(0xE9F3FF, .9); g.fillCircle(-5, -5, r * .22); }
+    else if (state === "ghost") { g.fillStyle(C.glow, .35); g.fillCircle(0, 0, r); g.lineStyle(2, C.glow, 1); g.strokeCircle(0, 0, r); }
+    else { g.lineStyle(1.5, 0xB9B7AD, 1); g.strokeCircle(0, 0, r); }
+    return g;
+  }
+  matCard(x, y, m, o = {}) {
+    const w = 72, h = 100, band = isRice(m) ? C.kinDeep : m === "麹" ? C.sugi : C.ai;
+    const c = this.cardBox(x, y, w, h, { band, r: 8, ring: o.ring });
+    c.add(this.text(0, -4, isRice(m) ? "米" : m === "麹" ? "麹" : "酵", 32, T.sumi, { font: F.brush, ox: .5, oy: .5 }));
+    c.add(this.text(0, 32, m, 11, T.dim, { ox: .5, oy: .5 }));
+    return c;
+  }
+  button(x, y, w, h, label, o = {}) {
+    const c = this.add.container(x, y), g = this.add.graphics();
+    const fill = o.disabled ? 0x8A8D93 : o.primary ? C.sumi : C.washi, fg = o.primary || o.disabled ? T.white : T.sumi;
+    g.fillStyle(0x000000, .3); g.fillRoundedRect(-w / 2, -h / 2 + 3, w, h, h / 2);
+    g.fillStyle(fill, 1); g.fillRoundedRect(-w / 2, -h / 2, w, h, h / 2);
+    if (!o.primary && !o.disabled) { g.lineStyle(1.5, C.sumi, 1); g.strokeRoundedRect(-w / 2, -h / 2, w, h, h / 2); }
+    c.add(g); c.add(this.text(0, 0, label, o.size || 14, fg, { ox: .5, oy: .5, bold: true }));
+    if (!o.disabled && o.on) { this.hit(c, w, h); c.on("pointerup", () => { if (!this.busy) o.on(); }); }
+    return c;
+  }
+  say(msg) {
+    if (!msg) return;
+    if (this.toastObj) this.toastObj.destroy();
+    const t = this.text(W / 2, 0, msg, 14, T.white, { ox: .5, oy: .5, bold: true });
+    const bg = this.add.graphics(); const w = t.width + 36;
+    bg.fillStyle(C.sumi, .95); bg.fillRoundedRect(-w / 2, -18, w, 36, 18);
+    const c = this.add.container(W / 2, 512, [bg, t.setPosition(0, 0)]).setDepth(950).setAlpha(0);
+    this.toastObj = c;
+    this.tweens.add({ targets: c, alpha: 1, y: 500, duration: 160 });
+    this.time.delayedCall(2300, () => { if (this.toastObj === c) this.tweens.add({ targets: c, alpha: 0, duration: 250, onComplete: () => c.destroy() }); });
+  }
+  floatText(x, y, str, color) {
+    const t = this.text(x, y, str, 22, color, { ox: .5, oy: .5, bold: true }).setDepth(920).setStroke("#1C1E22", 4);
+    this.tweens.add({ targets: t, y: y - 40, alpha: 0, duration: 1100, ease: "Cubic.easeOut", onComplete: () => t.destroy() });
+  }
+  banner(str) {
+    const t = this.text(W / 2, H / 2, str, 64, T.chalk, { font: F.brush, ox: .5, oy: .5 }).setDepth(940).setAlpha(0).setStroke("#0F1829", 8);
+    this.tweens.add({ targets: t, alpha: 1, scale: { from: 1.3, to: 1 }, duration: 260, ease: "Back.easeOut", yoyo: false, onComplete: () => this.tweens.add({ targets: t, alpha: 0, delay: 500, duration: 300, onComplete: () => t.destroy() }) });
+  }
+
+  // ---------- 描画 ----------
+  render() {
+    if (this.dragging) return;
+    this.clear();
+    this.slotCards = {}; this.glows = [];
+    this.drawTop(); this.drawLeft(); this.drawMarket(); this.drawBrewery(); this.drawRight(); this.drawBottom(); this.drawModal();
+    this.anim = {};
+  }
+
+  drawTop() {
+    this.keep(this.text(24, 30, "岩の井 蔵元", 28, T.chalk, { font: F.brush, oy: .5 }));
+    this.keep(this.text(176, 34, "試作", 11, T.chalkDim, { oy: .5 }));
+    const g = this.keep(this.add.graphics());
+    for (let i = 1; i <= TURNS; i++) {
+      const x = 392 + (i - 1) * 26, y = 30;
+      if (i === S.turn) continue;
+      if (i < S.turn) { g.fillStyle(0xffffff, .13); g.fillCircle(x, y, 9); }
+      else { g.lineStyle(1, 0xffffff, .25); g.strokeCircle(x, y, 9); }
+      if (i % 5 === 0) this.keep(this.text(x, y, String(i), 10, T.chalkDim, { ox: .5, oy: .5 }));
+    }
+    const nx = 392 + (S.turn - 1) * 26;
+    g.fillStyle(C.kin, .3); g.fillCircle(nx, 30, 19); g.fillStyle(C.kin, 1); g.fillCircle(nx, 30, 15);
+    this.keep(this.text(nx, 30, String(S.turn), 16, T.sumi, { ox: .5, oy: .5, bold: true }));
+    this.keep(this.text(392 + 19 * 26 + 18, 30, `/ ${TURNS}`, 11, T.chalkDim, { oy: .5 }));
+    const sal = salaryTotal();
+    this.keep(this.text(1084, 22, "次の給料", 11, T.chalkDim, { ox: 1, oy: .5 }));
+    this.keep(this.text(1084, 40, `${sal}両`, 15, S.money < sal ? T.red : T.chalk, { ox: 1, oy: .5, bold: true }));
+    this.purse = this.keep(this.koban(1140, 30, S.money, 1.15));
+    const help = this.keep(this.button(1232, 30, 70, 30, "遊び方", { size: 12, on: () => showHelp() }));
+  }
+
+  drawLeft() {
+    this.keep(this.text(20, 70, "イベント", 16, T.chalk, { font: F.brush, oy: .5 }));
+    this.keep(this.backStack(18, 92, 56, 80, 3));
+    const ev = S.event, band = ev.kind === "トラブル" ? C.shu : ev.kind === "選ぶ札" ? C.kinDeep : C.ai;
+    const cx = 86 + 86, cy = 92 + 118;
+    const c = this.keep(this.cardBox(cx, cy, 172, 236, { band }));
+    c.add(this.text(-74, -100, ev.kind, 10, T.dim));
+    c.add(this.text(-74, -84, ev.title, 18, T.sumi, { font: F.mincho, bold: true, wrap: 150, ls: 0 }));
+    c.add(this.text(-74, -26, ev.eff, 13, T.sumi, { wrap: 150 }));
+    c.add(this.text(-74, 52, ev.origin, 10, T.dim, { wrap: 150 }));
+    this.hit(c, 172, 236); c.on("pointerup", () => { if (!this.busy && S.pending) this.openChoice(); });
+    if (S.pending) { const b = this.button(0, 98, 132, 26, "選ぶ", { primary: true, size: 12, on: () => this.openChoice() }); c.add(b); }
+    if (this.anim.flip) { c.scaleX = 0; this.tweens.add({ targets: c, scaleX: 1, duration: 320, delay: 150, ease: "Back.easeOut" }); }
+    const chips = [];
+    if (S.buff) chips.push(["効", S.buff.label, C.glow]);
+    if (S.riceUp > 0) chips.push(["米", `値上がり あと${S.riceUp}ターン`, 0xFF9C8A]);
+    if (S.placeMinus > 0) chips.push(["人", `置ける人 −${S.placeMinus}`, 0xFF9C8A]);
+    chips.forEach(([k, label, col], i) => {
+      const y = 346 + i * 32, g = this.keep(this.add.graphics());
+      g.fillStyle(0xffffff, .08); g.fillRoundedRect(18, y - 13, 238, 26, 13); g.fillStyle(col, 1); g.fillCircle(31, y, 11);
+      this.keep(this.text(31, y, k, 11, T.sumi, { ox: .5, oy: .5, bold: true })); this.keep(this.text(48, y, label, 12, T.chalk, { oy: .5 }));
+    });
+    const hint = this.selectedHint() || S.hint;
+    this.keep(this.text(20, 450, hint, 12, T.chalkDim, { wrap: 236 }));
+  }
+  selectedHint() { if (!S.selected) return ""; const p = personOf(S.selected); return p ? `${p.role}を持っています。置く酒の札をタップしてください。` : ""; }
+
+  drawMarket() {
+    this.keep(this.text(280, 70, "酒の場", 16, T.chalk, { font: F.brush, oy: .5 }));
+    this.keep(this.text(340, 71, "光る札は今の手札で仕込める ・ タップで詳しく", 11, T.chalkDim, { oy: .5 }));
+    const inBrew = new Set(S.brew.map(b => b.id));
+    SAKES.forEach((s, i) => {
+      const col = i % 5, row = Math.floor(i / 5), cx = 280 + 66 + col * 138, cy = 122 + row * 82;
+      const can = canStart(s), busy = inBrew.has(s.id);
+      const c = this.keep(this.cardBox(cx, cy, 130, 76, { r: 8, ring: can ? C.glow : null }));
+      c.add(this.text(-57, -31, s.name, 13, T.sumi, { font: F.mincho, bold: true, wrap: 116, ls: -2 }));
+      needList(s).forEach((m, j) => { const g = this.add.graphics(); const col2 = m === "麹" ? C.sugi : m === "酵母" ? C.ai : C.kinDeep; g.fillStyle(col2, 1); g.fillRoundedRect(-57 + j * 17, 4, 15, 15, 3); c.add(g); c.add(this.text(-57 + j * 17 + 7.5, 11.5, m === "酵母" ? "酵" : m === "麹" ? "麹" : m === "米" ? "米" : shortRice(m), 9, T.white, { ox: .5, oy: .5, bold: true })); });
+      c.add(this.text(55, 11.5, `${s.gauge}マス`, 10, T.dim, { ox: 1, oy: .5 }));
+      c.add(this.text(-57, 28, busy ? "仕込み中" : `得意 ${s.spec}`, 10, T.dim, { oy: .5 }));
+      c.add(this.text(55, 28, `${Math.floor(s.rev * decayRate(s.id))}両`, 13, T.kinDeep, { ox: 1, oy: .5, bold: true }));
+      if (busy) c.setAlpha(.45);
+      this.hit(c, 130, 76); c.on("pointerup", () => { if (!this.busy && !this.dragging) this.openSake(s.id, "market"); });
+      if (can) this.tweens.add({ targets: c, y: cy - 2, duration: 900, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
+      c.setData("pos", [cx, cy]); if (!this.marketPos) this.marketPos = {}; this.marketPos[s.id] = [cx, cy];
+    });
+  }
+
+  slotPos(i) { return [280 + 112 + i * 234, 268 + 128]; }
+  drawBrewery() {
+    this.keep(this.text(280, 256, "自分の蔵", 16, T.chalk, { font: F.brush, oy: .5 }));
+    this.keep(this.text(964, 257, `仕込み中 ${S.brew.length}/${BREW_MAX}`, 11, T.chalkDim, { ox: 1, oy: .5 }));
+    for (let i = 0; i < BREW_MAX; i++) {
+      const [cx, cy] = this.slotPos(i), b = S.brew[i];
+      if (!b) {
+        const g = this.keep(this.add.graphics()); g.lineStyle(2, 0xffffff, .2); g.strokeRoundedRect(cx - 110, cy - 124, 220, 248, 12);
+        this.keep(this.text(cx, cy, "空き枠\n酒の場から仕込む", 13, T.chalkDim, { ox: .5, oy: .5, align: "center" }));
+        continue;
+      }
+      const s = SAKE[b.id], add = planned(b.id), after = Math.min(s.gauge, b.filled + add), rate = decayRate(b.id), ready = after >= s.gauge;
+      const c = this.keep(this.cardBox(cx, cy, 220, 248, { ring: ready ? C.good : null, r: 12 }));
+      const glow = this.add.graphics(); glow.lineStyle(4, C.glow, 1); glow.strokeRoundedRect(-112, -126, 224, 252, 14); glow.setVisible(!!S.selected); c.add(glow); this.glows.push(glow);
+      // 縦書きの銘柄
+      const g = this.add.graphics(); g.lineStyle(1, 0xD8D5CA, 1); g.lineBetween(-62, -112, -62, 112); c.add(g);
+      let cols = s.v.split("\n"), top = -108;
+      if (cols[0] === "i240") { c.add(this.text(-80, top, "i240", 14, T.sumi, { font: F.mincho, bold: true, ox: .5 })); cols = cols.slice(1); top += 22; }
+      cols.forEach((col, k) => c.add(this.text(-80 + (cols.length === 2 ? (k === 0 ? 12 : -12) : 0), top, col.split("").join("\n"), cols.length === 2 ? 15 : 18, T.sumi, { font: F.mincho, bold: true, ox: .5, ls: -4, align: "center" })));
+      // 判子と小判
+      let sx = -52;
+      [...s.tags, `得意 ${s.spec}`].forEach((t, k) => { const tw = t.length * 10 + 10; const sg = this.add.graphics(); sg.lineStyle(1, k < s.tags.length ? C.shu : 0x5A5D63, 1); sg.strokeRect(sx, -112, tw, 18); c.add(sg); c.add(this.text(sx + tw / 2, -103, t, 10, k < s.tags.length ? T.shu : T.dim, { ox: .5, oy: .5 })); sx += tw + 4; if (sx > 40) sx = -52; });
+      c.add(this.koban(68, -76, Math.floor(s.rev * rate), .82));
+      if (rate < 1) c.add(this.text(68, -56, `${(S.ships[b.id] || 0) + 1}回目 ${Math.round(rate * 100)}%`, 9, T.dim, { ox: .5, oy: .5 }));
+      // おはじき
+      const from = this.anim.marbles ? this.anim.marbles[b.id] : null;
+      for (let j = 0; j < s.gauge; j++) {
+        const mx = -38 + (j % 4) * 34, my = -30 + Math.floor(j / 4) * 32;
+        const state = j < b.filled ? "on" : j < after ? "ghost" : "off";
+        const m = this.marble(mx, my, state); c.add(m);
+        if (from != null && j >= from && j < b.filled) { m.setScale(0); this.tweens.add({ targets: m, scale: 1, duration: 260, delay: 80 * (j - from), ease: "Back.easeOut" }); }
+      }
+      c.add(this.text(-52, 30, ready ? "このターンで出荷" : `あと${s.gauge - after}マス`, 11, ready ? "#2E6B3A" : T.dim, { oy: .5, bold: ready }));
+      const tray = this.add.graphics(); tray.fillStyle(0xE3E0D4, 1); tray.fillRoundedRect(-56, 44, 160, 72, 8); c.add(tray);
+      if (!Object.values(S.assign).includes(b.id)) c.add(this.text(24, 80, S.selected ? "ここに置く" : "駒を置く", 11, T.dim, { ox: .5, oy: .5 }));
+      // やめる
+      const q = this.add.container(102, -116); const qg = this.add.graphics();
+      const sure = this.confirmQuit === b.id; const qw = sure ? 64 : 24;
+      qg.fillStyle(sure ? C.shu : C.washi, 1); qg.fillRoundedRect(-qw / 2, -12, qw, 24, 12); qg.lineStyle(1, 0x9A978C, 1); qg.strokeRoundedRect(-qw / 2, -12, qw, 24, 12);
+      q.add(qg); q.add(this.text(0, 0, sure ? "やめる" : "×", sure ? 11 : 13, sure ? T.white : T.dim, { ox: .5, oy: .5, bold: true })); c.add(q);
+      this.hit(q, qw, 24); q.on("pointerup", (p, lx, ly, e) => { e.stopPropagation(); if (this.busy) return; if (this.confirmQuit === b.id) { this.confirmQuit = null; this.say(Act.quit(b.id)); } else this.confirmQuit = b.id; this.render(); });
+      this.hit(c, 220, 248, { dropZone: true }); c.setData("sid", b.id);
+      c.on("pointerup", () => { if (this.busy || this.dragging) return; if (S.selected) { this.say(Act.place(S.selected, b.id)); S.selected = null; this.render(); } else this.openSake(b.id, "brew"); });
+      this.slotCards[b.id] = c;
+      // 置いた駒
+      Object.entries(S.assign).filter(([, sid]) => sid === b.id).forEach(([pid], k) => {
+        const p = personOf(pid); if (!p) return;
+        const kx = cx - 56 + 22 + (k % 4) * 38, ky = cy + 44 + 30;
+        const kc = this.keep(this.koma(kx, ky, p, .82)); kc.setDepth(20); kc.setData("placed", true);
+        const gain = marksBy(p, b.id); this.keep(this.text(kx, ky + 26, `+${gain}`, 10, gain ? "#2E6B3A" : T.shu, { ox: .5, oy: .5, bold: true })).setDepth(21);
+        this.makeKomaInteractive(kc, p);
+      });
+    }
+  }
+
+  drawRight() {
+    this.keep(this.text(984, 70, "求人の場", 16, T.chalk, { font: F.brush, oy: .5 }));
+    this.keep(this.text(1264, 71, "給料は毎ターン1両", 11, T.chalkDim, { ox: 1, oy: .5 }));
+    this.keep(this.backStack(982, 92, 34, 210, 3, S.rdeck.length));
+    S.field.forEach((p, i) => {
+      const r = ROLES[p.role], cx = 1034 + 115, cy = 92 + 33 + i * 72, ok = S.money >= r.fee;
+      const c = this.keep(this.cardBox(cx, cy, 230, 64, { r: 8 }));
+      const k = this.koma(-92, 2, p, .8); c.add(k);
+      c.add(this.text(-62, -14, p.role, 15, T.sumi, { bold: true, oy: .5 }));
+      c.add(this.text(-62, 10, r.eff, 10.5, T.dim, { oy: .5, wrap: 120 }));
+      c.add(this.koban(84, 0, r.fee, .7));
+      if (!ok) c.setAlpha(.55);
+      this.hit(c, 230, 64); c.on("pointerup", () => { if (!this.busy) this.openRecruit(p.id); });
+      if (!this.recruitPos) this.recruitPos = {}; this.recruitPos[p.id] = [cx, cy];
+    });
+    this.keep(this.button(1150, 314, 196, 24, "1両で3枚を入れ替える", { size: 11, disabled: S.refreshed || S.money < 1, on: () => { this.say(Act.refresh()); this.render(); } }));
+    // 取引先の早見表
+    const bx = 984, by = 338, bw = 280, bh = 186;
+    const g = this.keep(this.add.graphics()); g.fillStyle(0x000000, .3); g.fillRoundedRect(bx + 2, by + 4, bw, bh, 10); g.fillStyle(C.washi, 1); g.fillRoundedRect(bx, by, bw, bh, 10);
+    this.keep(this.text(bx + 12, by + 18, "取引先", 16, T.sumi, { font: F.brush, oy: .5 }));
+    this.keep(this.text(bx + bw - 12, by + 18, `あと${S.buysLeft}枚${S.freeBuy ? "・次の1枚無料" : ""}`, 11, T.dim, { ox: 1, oy: .5 }));
+    [...RICES, "麹", "酵母"].forEach((m, i) => {
+      const col = i % 2, row = Math.floor(i / 2), x = bx + 12 + col * 134, y = by + 50 + row * 36, p = S.freeBuy ? 0 : priceOf(m);
+      const ok = S.buysLeft > 0 && S.money >= p;
+      const c = this.keep(this.add.container(x + 61, y));
+      const rg = this.add.graphics(); rg.fillStyle(ok ? 0xFFFFFF : 0xE5E3D9, 1); rg.fillRoundedRect(-61, -15, 122, 30, 8); rg.lineStyle(1, 0xD8D5CA, 1); rg.strokeRoundedRect(-61, -15, 122, 30, 8);
+      const band = isRice(m) ? C.kinDeep : m === "麹" ? C.sugi : C.ai; rg.fillStyle(band, 1); rg.fillRoundedRect(-61, -15, 6, 30, { tl: 8, bl: 8, tr: 0, br: 0 });
+      c.add(rg); c.add(this.text(-48, 0, m, 13, ok ? T.sumi : T.dim, { oy: .5 }));
+      c.add(this.text(54, 0, `${p}両`, 13, S.riceUp && isRice(m) ? T.shu : T.kinDeep, { ox: 1, oy: .5, bold: true }));
+      if (ok) { this.hit(c, 122, 30); c.on("pointerup", () => { if (!this.busy) this.buyAnimated(m, x + 61, y); }); }
+    });
+  }
+
+  handPos(i, n) { const mid = (n - 1) / 2, cx = 552 + (i - mid) * 58, cy = 636 + Math.abs(i - mid) * 5; return [cx, cy, (i - mid) * 5]; }
+  drawBottom() {
+    this.keep(this.backStack(22, 568, 66, 94, 3, S.deck.length));
+    this.keep(this.text(58, 690, "山札", 11, T.chalkDim, { ox: .5 }));
+    const top = S.discard[S.discard.length - 1];
+    if (top) { const d = this.keep(this.matCard(150, 615, top)); d.setScale(.94); } else { const g = this.keep(this.add.graphics()); g.lineStyle(2, 0xffffff, .2); g.strokeRoundedRect(114, 568, 66, 94, 8); }
+    this.keep(this.text(150, 690, `捨て札 ${S.discard.length}`, 11, T.chalkDim, { ox: .5 }));
+    // 手札
+    this.keep(this.text(300, 552, "手札", 16, T.chalk, { font: F.brush, oy: .5 }));
+    this.keep(this.text(340, 553, `${S.hand.length}/${HAND_MAX}枚`, 11, S.hand.length > HAND_MAX ? T.red : T.chalkDim, { oy: .5 }));
+    const n = S.hand.length, dealt = this.anim.dealt || 0;
+    S.hand.forEach((card, i) => {
+      const [x, y, rot] = this.handPos(i, n);
+      const picked = this.modal === "discard" && this.discardSel.includes(card.id);
+      const c = this.keep(this.matCard(x, y - (picked ? 18 : 0), card.m, { ring: picked ? C.shu : i >= HAND_MAX ? 0xFF9C8A : null }));
+      c.rotation = ROT(rot); c.setDepth(30 + i);
+      if (i >= n - dealt) { c.setPosition(55, 615).setScale(.6).setRotation(0); this.tweens.add({ targets: c, x, y, scale: 1, rotation: ROT(rot), duration: 380, delay: 120 * (i - (n - dealt)) + 300, ease: "Cubic.easeOut" }); }
+      this.hit(c, 72, 100);
+      c.on("pointerover", () => { if (this.modal !== "discard") this.tweens.add({ targets: c, y: y - 14, duration: 120 }); });
+      c.on("pointerout", () => { if (this.modal !== "discard") this.tweens.add({ targets: c, y, duration: 120 }); });
+      c.on("pointerup", () => { if (this.modal === "discard") { const k = this.discardSel.indexOf(card.id); if (k >= 0) this.discardSel.splice(k, 1); else if (this.discardSel.length < S.hand.length - HAND_MAX) this.discardSel.push(card.id); this.render(); } });
+    });
+    if (!n) this.keep(this.text(552, 636, "手札はありません", 12, T.chalkDim, { ox: .5, oy: .5 }));
+    // 詰所
+    const g = this.keep(this.add.graphics()); g.fillStyle(0x000000, .2); g.fillRoundedRect(800, 548, 310, 160, 12); g.lineStyle(1, 0xffffff, .08); g.strokeRoundedRect(800, 548, 310, 160, 12);
+    this.keep(this.text(814, 566, "詰所", 16, T.chalk, { font: F.brush, oy: .5 }));
+    this.keep(this.text(1096, 567, `置いた ${assignedCount()}/${placeLimit()} ・ 駒を酒の札へ`, 11, T.chalkDim, { ox: 1, oy: .5 }));
+    const crew = [...S.hired, ...(S.temp ? [S.temp] : [])].filter(p => !S.assign[p.id]);
+    crew.forEach((p, i) => {
+      const x = 838 + (i % 6) * 46, y = 618 + Math.floor(i / 6) * 62;
+      const k = this.keep(this.koma(x, y, p)); k.setDepth(40);
+      this.keep(this.text(x, y + 32, ROLES[p.role].kind === "ability" ? "効く" : p.role, 10, T.chalkDim, { ox: .5, oy: .5 }));
+      if (S.selected === String(p.id)) { k.y -= 8; const ring = this.keep(this.add.graphics()); ring.lineStyle(3, C.glow, 1); ring.strokeCircle(x, y - 8, 28); }
+      if (this.anim.newKoma === String(p.id)) { k.setScale(0); this.tweens.add({ targets: k, scale: 1, duration: 300, ease: "Back.easeOut" }); }
+      this.makeKomaInteractive(k, p);
+    });
+    if (!crew.length) this.keep(this.text(955, 630, "全員を置きました", 12, T.chalkDim, { ox: .5, oy: .5 }));
+    // 仕込むボタン
+    const shipN = S.brew.filter(b => b.filled + planned(b.id) >= SAKE[b.id].gauge).length;
+    const bc = this.keep(this.add.container(1196, 622)); const bg = this.add.graphics();
+    bg.fillStyle(0x5E4508, 1); bg.fillCircle(0, 5, 62); bg.fillStyle(C.kinDeep, 1); bg.fillCircle(0, 0, 62); bg.fillStyle(C.kin, 1); bg.fillCircle(0, -2, 57); bg.fillStyle(0xFFF1C2, .45); bg.fillEllipse(-14, -24, 54, 26);
+    bc.add(bg); bc.add(this.text(0, -8, "仕込む", 28, T.sumi, { font: F.brush, ox: .5, oy: .5 }));
+    bc.add(this.text(0, 22, shipN ? `${shipN}本出荷` : "ターンを進める", 11, T.sumi, { ox: .5, oy: .5, bold: true }));
+    this.hit(bc, 124, 124);
+    bc.on("pointerdown", () => this.tweens.add({ targets: bc, scale: .94, duration: 80 }));
+    bc.on("pointerout", () => bc.setScale(1));
+    bc.on("pointerup", () => { bc.setScale(1); this.advanceAnimated(); });
+    if (shipN && !this.busy) this.tweens.add({ targets: bc, scale: 1.05, duration: 600, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
+    this.keep(this.text(1196, 700, S.pending ? "先にイベント札で選ぶ" : "雇う・買う・仕込む・置く", 10, T.chalkDim, { ox: .5, oy: .5 }));
+  }
+
+  makeKomaInteractive(k, p) {
+    const kind = ROLES[p.role].kind;
+    this.hit(k, 44, 50, kind === "ability" ? {} : { draggable: true });
+    k.on("pointerup", () => {
+      if (this.dragging || this.busy) return;
+      if (kind === "ability") { this.say(`${p.role}: ${ROLES[p.role].eff}。置かなくても効きます。`); return; }
+      if (k.getData("placed")) { Act.unplace(p.id); S.selected = String(p.id); this.render(); return; }
+      S.selected = S.selected === String(p.id) ? null : String(p.id); this.render();
+    });
+  }
+  showGlows(on) { for (const g of this.glows || []) g.setVisible(on || !!S.selected); }
+
+  // ---------- 重ねる画面（キャンバスの中） ----------
+  scrim(onClose) {
+    const r = this.keep(this.add.rectangle(W / 2, H / 2, W, H, 0x060A14, .7).setDepth(800));
+    r.setInteractive(); if (onClose) r.on("pointerup", () => { if (!this.busy) onClose(); });
+    return r;
+  }
+  drawModal() {
+    if (!this.modal) return;
+    const M = this.modal;
+    if (M.kind === "sake") return this.drawSakeModal(M);
+    if (M.kind === "recruit") return this.drawRecruitModal(M);
+    if (M === "choice") return this.drawChoice();
+    if (M === "ship") return this.drawShip();
+    if (M === "discard") return this.drawDiscard();
+  }
+  openSake(id, from) { this.modal = { kind: "sake", id, from }; this.render(); }
+  openRecruit(id) { this.modal = { kind: "recruit", id }; this.render(); }
+  openChoice() { this.modal = "choice"; this.render(); }
+  close() { this.modal = null; this.render(); }
+
+  drawSakeModal(M) {
+    const s = SAKE[M.id], b = S.brew.find(x => x.id === M.id), rate = decayRate(s.id);
+    this.scrim(() => this.close());
+    const c = this.keep(this.cardBox(W / 2, H / 2, 420, 480, { r: 14 })).setDepth(810);
+    c.add(this.text(-186, -214, s.tags.join(" ・ ") || "　", 12, T.shu));
+    c.add(this.text(-186, -194, s.name, 28, T.sumi, { font: F.mincho, bold: true, wrap: 300 }));
+    c.add(this.koban(150, -184, Math.floor(s.rev * rate), 1.1));
+    if (rate < 1) c.add(this.text(150, -158, `${(S.ships[s.id] || 0) + 1}回目なので${Math.round(rate * 100)}%`, 11, T.dim, { ox: .5 }));
+    c.add(this.text(-186, -130, s.say, 15, T.sumi, { wrap: 372 }));
+    const plan = payPlan(s), have = needList(s);
+    c.add(this.text(-186, -70, "必要な素材", 12, T.dim));
+    have.forEach((m, j) => { const missing = plan.miss.includes(m === "米" ? "米" : m) && !b; c.add(this.matMini(-160 + j * 62, -18, m, missing)); });
+    c.add(this.text(-186, 30, `仕込みのマス ${s.gauge} ・ 得意な担当 ${s.spec}（2マス）`, 13, T.sumi));
+    if (b) {
+      for (let j = 0; j < s.gauge; j++) c.add(this.marble(-170 + j * 32, 72, j < b.filled ? "on" : "off", 12));
+      c.add(this.text(-186, 96, `${b.filled}/${s.gauge}マス`, 12, T.dim));
+    } else if (plan.miss.length) c.add(this.text(-186, 64, `足りない: ${plan.miss.join("・")}（取引先で買えます）`, 13, T.shu, { wrap: 372 }));
+    else if (S.brew.length >= BREW_MAX) c.add(this.text(-186, 64, "自分の蔵がいっぱいです（3枚まで）", 13, T.shu));
+    c.add(this.text(-186, 160, "20歳未満の者の飲酒は法律で禁止されています", 10, T.dim));
+    const can = !b && canStart(s);
+    if (!b) c.add(this.button(-80, 200, 170, 40, "仕込む", { primary: true, disabled: !can, on: () => this.startAnimated(s.id) }));
+    else c.add(this.button(-80, 200, 170, 40, "仕込みをやめる", { on: () => { this.confirmQuit = s.id; this.close(); this.say("右上の「×」をもう一度押すとやめます。"); } }));
+    c.add(this.button(110, 200, 140, 40, "閉じる", { on: () => this.close() }));
+    c.setScale(.9); this.tweens.add({ targets: c, scale: 1, duration: 160, ease: "Back.easeOut" });
+  }
+  matMini(x, y, m, missing) {
+    const c = this.add.container(x, y), g = this.add.graphics(), band = m === "麹" ? C.sugi : m === "酵母" ? C.ai : C.kinDeep;
+    g.fillStyle(missing ? 0xF4DAD4 : 0xFFFFFF, 1); g.fillRoundedRect(-26, -32, 52, 64, 6); g.lineStyle(missing ? 2 : 1, missing ? C.shu : 0xD8D5CA, 1); g.strokeRoundedRect(-26, -32, 52, 64, 6);
+    g.fillStyle(band, 1); g.fillRoundedRect(-26, -32, 52, 7, { tl: 6, tr: 6, bl: 0, br: 0 });
+    c.add(g); c.add(this.text(0, -4, m === "麹" ? "麹" : m === "酵母" ? "酵" : "米", 22, T.sumi, { font: F.brush, ox: .5, oy: .5 }));
+    c.add(this.text(0, 20, m === "米" ? "どの米でも" : m, 9, T.dim, { ox: .5, oy: .5 }));
+    return c;
+  }
+  drawRecruitModal(M) {
+    const p = S.field.find(x => x.id === M.id); if (!p) { this.modal = null; return; }
+    const r = ROLES[p.role];
+    this.scrim(() => this.close());
+    const c = this.keep(this.cardBox(W / 2, H / 2, 380, 380, { r: 14 })).setDepth(810);
+    c.add(this.koma(-130, -110, p, 1.8));
+    c.add(this.text(-80, -150, p.role, 30, T.sumi, { font: F.mincho, bold: true }));
+    c.add(this.text(-80, -108, `${p.name}（架空の人物）`, 14, T.dim));
+    c.add(this.text(-80, -86, `「${p.line}」`, 14, T.sumi, { wrap: 240 }));
+    c.add(this.text(-166, -24, r.kind === "ability" ? "雇っているだけで効く" : "酒の札に置くと", 12, T.dim));
+    c.add(this.text(-166, -2, r.eff, 18, T.sumi, { bold: true, wrap: 330 }));
+    c.add(this.text(-166, 50, "契約金", 12, T.dim)); c.add(this.koban(-80, 58, r.fee, .9));
+    c.add(this.text(-20, 50, "雇った人は手放せず、最後まで毎ターン1両の給料がかかります。", 11, T.dim, { wrap: 190 }));
+    c.add(this.button(-70, 140, 160, 40, `${r.fee}両で雇う`, { primary: true, disabled: S.money < r.fee, on: () => this.hireAnimated(p.id) }));
+    c.add(this.button(100, 140, 120, 40, "閉じる", { on: () => this.close() }));
+    c.setScale(.9); this.tweens.add({ targets: c, scale: 1, duration: 160, ease: "Back.easeOut" });
+  }
+  drawChoice() {
+    const P = S.pending; if (!P) { this.modal = null; return; }
+    const ev = S.event;
+    this.scrim(null);
+    const c = this.keep(this.cardBox(W / 2, H / 2, 560, 330, { r: 14, band: ev.kind === "トラブル" ? C.shu : ev.kind === "選ぶ札" ? C.kinDeep : C.ai })).setDepth(810);
+    c.add(this.text(-250, -130, `${ev.kind} ・ イベント`, 12, T.dim));
+    c.add(this.text(-250, -110, ev.title, 28, T.sumi, { font: F.mincho, bold: true }));
+    c.add(this.text(-250, -66, ev.eff, 16, T.sumi, { wrap: 500 }));
+    const done = () => { this.modal = S.pending ? "choice" : null; this.render(); };
+    const go = (k, a) => { this.say(Act.resolve(k, a)); done(); };
+    let opts = [];
+    if (P.type === "pick2" || (P.type === "newrice" && P.paid)) {
+      c.add(this.text(-250, -20, `あと${P.left}枚選んでください`, 13, T.dim));
+      const list = P.type === "pick2" ? [...RICES, "麹", "酵母"] : RICES;
+      list.forEach((m, j) => { const b = this.button(-210 + (j % 4) * 140, 30 + Math.floor(j / 4) * 52, 128, 40, m, { on: () => go(P.type === "pick2" ? "pick" : "rice", m) }); c.add(b); });
+    } else {
+      if (P.type === "breakdown") { opts = [["2両払う", "pay", null, S.money < 2], ...S.brew.filter(b => b.filled > 0).map(b => [`${SAKE[b.id].name}を1マス戻す`, "mark", b.id, false])]; }
+      if (P.type === "interview") opts = [["受ける", "yes"], ["断る", "no"]];
+      if (P.type === "newrice") opts = [["3両払う", "pay"], ["見送る", "no"]];
+      if (P.type === "tasting") opts = [["2両払う", "yes"], ["見送る", "no"]];
+      opts.forEach(([label, k, a, dis], j) => c.add(this.button(-150 + (j % 2) * 300, 40 + Math.floor(j / 2) * 54, 280, 44, label, { primary: j === 0, disabled: dis, on: () => go(k, a) })));
+    }
+    c.setScale(.9); this.tweens.add({ targets: c, scale: 1, duration: 180, ease: "Back.easeOut" });
+  }
+  drawShip() {
+    const rs = this.lastShip || [];
+    this.scrim(null);
+    this.keep(this.text(W / 2, 112, `${S.turn}ターン目の出荷`, 36, T.chalk, { font: F.brush, ox: .5, oy: .5 }).setDepth(810));
+    if (!rs.length) this.keep(this.text(W / 2, 300, "このターンに出荷できた酒はありません。", 18, T.chalk, { ox: .5, oy: .5 }).setDepth(810));
+    rs.forEach((r, i) => {
+      const x = W / 2 + (i - (rs.length - 1) / 2) * 270, y = 310;
+      const c = this.keep(this.cardBox(x, y, 250, 270, { r: 14, ring: C.good })).setDepth(820);
+      c.add(this.text(-108, -118, "出荷", 12, "#2E6B3A", { bold: true }));
+      c.add(this.text(-108, -98, r.s.name, 22, T.sumi, { font: F.mincho, bold: true, wrap: 216 }));
+      c.add(this.text(-108, -30, `+${r.v}両`, 36, T.kinDeep, { bold: true }));
+      c.add(this.text(-108, 18, r.calc, 11, T.dim, { wrap: 216 }));
+      c.add(this.text(-108, 46, r.s.say, 13, T.sumi, { wrap: 216 }));
+      c.setScale(0); this.tweens.add({ targets: c, scale: 1, duration: 300, delay: 120 * i, ease: "Back.easeOut", onStart: () => this.particles.explode(18, x, y - 40) });
+    });
+    const gain = rs.reduce((a, r) => a + r.v, 0), sal = salaryTotal();
+    this.keep(this.text(W / 2, 486, `売上 +${gain}両 ／ 給料 −${sal}両（${S.hired.length}人） → ${S.money - sal}両`, 16, S.money - sal < 0 ? T.red : T.chalk, { ox: .5, oy: .5, bold: true }).setDepth(810));
+    this.keep(this.button(W / 2, 540, 300, 48, "給料を払って次のターンへ", { primary: false, size: 15, on: () => this.afterShip() })).setDepth(830);
+  }
+  drawDiscard() {
+    const need = S.hand.length - HAND_MAX;
+    const g = this.keep(this.add.graphics().setDepth(700)); g.fillStyle(0x060A14, .55); g.fillRect(0, 0, W, 540);
+    this.keep(this.text(W / 2, 250, "手札は5枚まで", 34, T.chalk, { font: F.brush, ox: .5, oy: .5 }).setDepth(710));
+    this.keep(this.text(W / 2, 300, `捨てる札をあと${need - this.discardSel.length}枚、手札からタップしてください`, 16, T.chalk, { ox: .5, oy: .5 }).setDepth(710));
+    this.keep(this.button(W / 2, 360, 260, 46, "捨てて給料を払う", { primary: true, disabled: this.discardSel.length !== need, on: () => { Act.discard(this.discardSel); this.modal = null; this.paySalary(); } })).setDepth(720);
+  }
+
+  // ---------- 演出つきの操作 ----------
+  startAnimated(id) {
+    const s = SAKE[id]; if (!canStart(s)) return;
+    this.modal = null; this.render(); this.busy = true;
+    const [fx, fy] = this.marketPos[id], [tx, ty] = this.slotPos(S.brew.length);
+    const ghost = this.cardBox(fx, fy, 130, 76, { r: 8 }).setDepth(600);
+    ghost.add(this.text(0, 0, s.name, 13, T.sumi, { font: F.mincho, bold: true, ox: .5, oy: .5 }));
+    const plan = payPlan(s);
+    plan.pay.forEach((card, j) => { const i = S.hand.indexOf(card); if (i < 0) return; const [hx, hy] = this.handPos(i, S.hand.length); const m = this.matCard(hx, hy, card.m).setDepth(610); this.tweens.add({ targets: m, x: tx, y: ty, scale: .3, alpha: 0, duration: 420, delay: 60 * j, ease: "Cubic.easeIn", onComplete: () => m.destroy() }); });
+    this.tweens.add({ targets: ghost, x: tx, y: ty, scaleX: 220 / 130, scaleY: 248 / 72, duration: 420, ease: "Cubic.easeInOut", onComplete: () => { ghost.destroy(); this.busy = false; this.say(Act.start(id)); this.render(); } });
+  }
+  hireAnimated(cid) {
+    const p = S.field.find(x => x.id === cid); const fee = ROLES[p.role].fee; if (S.money < fee) return;
+    this.modal = null; this.render(); this.busy = true;
+    const [fx, fy] = this.recruitPos[cid];
+    const k = this.koma(fx - 92, fy, p, .8).setDepth(600);
+    this.floatText(1140, 54, `−${fee}両`, T.red);
+    this.tweens.add({ targets: k, x: 838 + Math.min(5, [...S.hired, ...(S.temp ? [S.temp] : [])].filter(x => !S.assign[x.id]).length) * 46, y: 618, scale: 1, duration: 480, ease: "Cubic.easeInOut",
+      onComplete: () => { k.destroy(); this.busy = false; this.say(Act.hire(cid)); this.anim.newKoma = String(p.id); this.render(); } });
+  }
+  buyAnimated(m, fx, fy) {
+    const p = S.freeBuy ? 0 : priceOf(m); if (S.buysLeft <= 0 || S.money < p) return;
+    this.busy = true;
+    const c = this.matCard(fx, fy, m).setDepth(600).setScale(.5);
+    if (p) this.floatText(1140, 54, `−${p}両`, T.red);
+    const [hx, hy] = this.handPos(S.hand.length, S.hand.length + 1);
+    this.tweens.add({ targets: c, x: hx, y: hy, scale: 1, duration: 380, ease: "Cubic.easeOut", onComplete: () => { c.destroy(); this.busy = false; this.say(Act.buy(m)); this.render(); } });
+  }
+  advanceAnimated() {
+    if (this.busy || this.modal) return;
+    if (S.over) return;
+    if (S.pending) { this.openChoice(); return; }
+    this.busy = true; S.selected = null;
+    const from = {}; S.brew.forEach(b => from[b.id] = b.filled);
+    Act.fill(); this.anim.marbles = from; this.render();
+    const ready = S.brew.filter(b => b.filled >= SAKE[b.id].gauge).map(b => b.id);
+    this.time.delayedCall(ready.length ? 650 : 450, () => {
+      ready.forEach((id, i) => { const c = this.slotCards[id]; if (!c) return; c.setDepth(600);
+        this.tweens.add({ targets: c, x: W / 2 + (i - (ready.length - 1) / 2) * 120, y: 300, scale: .7, alpha: .0, duration: 420, ease: "Cubic.easeIn" });
+        this.particles.explode(14, c.x, c.y); });
+      this.time.delayedCall(ready.length ? 380 : 0, () => {
+        this.lastShip = Act.ship();
+        this.lastShip.forEach(r => this.floatText(1140, 60, `+${r.v}両`, "#F3D27A"));
+        this.busy = false; this.modal = "ship"; this.render();
+      });
+    });
+  }
+  afterShip() {
+    this.modal = null;
+    if (S.hand.length > HAND_MAX) { this.modal = "discard"; this.discardSel = []; this.render(); return; }
+    this.paySalary();
+  }
+  paySalary() {
+    const before = S.hand.length, sal = salaryTotal();
+    this.render(); this.busy = true;
+    this.floatText(1140, 54, `給料 −${sal}両`, T.red);
+    this.time.delayedCall(350, () => {
+      Act.salary(); this.busy = false;
+      if (S.over) { this.render(); showEnd(); return; }
+      this.anim.flip = true; this.anim.dealt = Math.max(0, S.hand.length - before);
+      this.render(); this.banner(`${S.turn}ターン目`);
+      if (S.pending) this.time.delayedCall(900, () => this.openChoice());
+    });
+  }
+}
+
+// =====================================================================
+// HTML で重ねる画面（遊び方・結果）
+// =====================================================================
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const overlay = document.getElementById("overlay");
+function closeOverlay() { overlay.innerHTML = ""; }
+function scene() { return game.scene.getScene("board"); }
+function showHelp() {
+  overlay.innerHTML = `<div class="overlay" data-x="close"><div class="panel" role="dialog" aria-modal="true" aria-label="遊び方">
+    <h2>遊び方</h2><p>20ターン後の所持金が点数です。給料を払えなくなったら廃業です。</p>
+    <ol><li>イベント札が1枚めくれ、すぐ効く</li><li>山札から2枚引く</li><li>求人の場の札をタップして雇う</li><li>取引先の早見表から素材を2枚まで買う</li><li>光っている酒の場の札をタップして仕込む（3枚まで）</li><li>詰所の駒を酒の札へドラッグして置く（タップしてから札をタップでもよい）</li><li>金色の「仕込む」でおはじきが埋まり、埋まりきった酒が出荷される</li><li>給料を1人1両払う</li></ol>
+    <p class="note">蔵人はどの酒でも1マス。酛屋・船頭・蔵守は得意な酒で2マス、ほかでは0。金色の駒は置かなくても効く。同じ酒の2回目は80%、3回目から60%。置いた駒は次のターンもそのまま残る。</p>
+    <p class="note">ハッカソンの試作です。岩瀬酒造の公式のものではありません。数字はすべて仮です。</p>
+    <div class="btns"><button class="btn" data-x="close">盤面に戻る</button><button class="btn light" data-x="new">1ターン目から始める</button><button class="btn light" data-x="sample">7ターン目の見本に戻す</button></div></div></div>`;
+}
+function showEnd() {
+  const o = S.over, counts = {}; S.log.forEach(x => counts[x.id] = (counts[x.id] || 0) + 1);
+  const rank = RANKS.find(([min]) => S.money >= min)[1];
+  const names = Object.keys(counts).map(id => SAKE[id].name).join("、") || "なし";
+  const share = o.kind === "finish" ? `岩瀬酒造 蔵元カードゲーム（試作）で20ターン。所持金${S.money}両、ランク${rank}。造った酒: ${names}` : `岩瀬酒造 蔵元カードゲーム（試作）で${o.turn}ターン目に廃業。造った酒: ${names}`;
+  overlay.innerHTML = `<div class="overlay"><div class="panel" role="dialog" aria-modal="true" aria-label="結果">
+    <h2>${o.kind === "finish" ? "二十ターン、お疲れさまでした" : `${o.turn}ターン目で廃業`}</h2>
+    ${o.kind === "finish" ? `<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap"><span class="big">${S.money}両</span><span class="rank">ランク ${rank}</span><span class="note">ランクの基準は仮です</span></div>` : `<p>給料を払えませんでした。</p>`}
+    <div class="zukan">${Object.keys(counts).map(id => `<div><b>${esc(SAKE[id].name)}</b>${counts[id]}回出荷 ・ ${esc(SAKE[id].say)}</div>`).join("") || "<div>出荷した酒はありません。</div>"}</div>
+    <p class="note">ここで造った酒は <a href="${SHOP_URL}" target="_blank" rel="noopener">岩の井 蔵元直送ショップ</a> で買えます。ゲームの中では購入を扱いません。20歳未満の者の飲酒は法律で禁止されています。</p>
+    <textarea id="share-text" class="share" readonly aria-label="結果を共有する文章">${esc(share)}</textarea>
+    <div class="btns"><button class="btn" data-x="copy">文章ごとコピー</button><button class="btn light" data-x="new">もう一度遊ぶ</button></div></div></div>`;
+}
+overlay.addEventListener("click", e => {
+  const el = e.target.closest("[data-x]"); if (!el) return; const x = el.dataset.x;
+  if (x === "close" && el.classList.contains("overlay") && e.target !== el) return;
+  if (x === "close") closeOverlay();
+  if (x === "new") { closeOverlay(); newGame(Math.floor(Math.random() * 1e9)); const sc = scene(); sc.modal = null; sc.anim = { flip: true, dealt: 5 }; sc.render(); sc.banner("1ターン目"); if (S.pending) sc.time.delayedCall(900, () => sc.openChoice()); }
+  if (x === "sample") { closeOverlay(); sampleGame(); const sc = scene(); sc.modal = null; sc.render(); }
+  if (x === "copy") { const ta = document.getElementById("share-text"); try { navigator.clipboard.writeText(ta.value).then(() => (el.textContent = "コピーしました"), () => ta.select()); } catch { ta.select(); } }
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape" && overlay.innerHTML) { if (!S.over) closeOverlay(); } });
+
+// =====================================================================
+// 起動（字体を読み込んでから盤面を作る）
+// =====================================================================
+let game;
+sampleGame();
+const fonts = ['28px "Yuji Syuku"', '800 20px "Shippori Mincho B1"', '14px "Zen Kaku Gothic New"', 'bold 14px "Zen Kaku Gothic New"'];
+const ready = Promise.race([Promise.all(fonts.map(f => document.fonts.load(f, "岩の井蔵元仕込む米麹酵両"))), new Promise(r => setTimeout(r, 3500))]);
+ready.then(() => {
+  document.getElementById("loading").remove();
+  game = new Phaser.Game({ type: Phaser.AUTO, parent: "game", backgroundColor: "#0F1829", width: W * DPR, height: H * DPR,
+    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }, scene: [Board], banner: false });
+});
+})();
+</script>
