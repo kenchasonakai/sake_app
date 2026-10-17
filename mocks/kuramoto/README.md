@@ -8,8 +8,12 @@
 
 | ファイル | 中身 |
 | --- | --- |
-| `kuramoto-phaser.html` | 盤面のモック。HTML 1 枚で動く |
+| `kuramoto-phaser.html` | 盤面のモック。いまの版。HTML 1 枚で動く |
+| `kuramoto-board.html` | 前の版。横画面の盤面を HTML と CSS だけで作ったもの |
+| `kuramoto-mock.html` | 最初の版。縦画面で、場を上から順に並べたもの |
 | `sim.py` | ルールの数字を確かめる簡易シミュレーター |
+
+前の 2 つも遊べます。公開版は、横画面の HTML 版が https://claude.ai/artifact/H8yMmH9td8Kjt8rViYq4h8 、縦画面版が https://claude.ai/artifact/8BPn7TDGudL5cH6ogGFi2Z です。
 
 ## 開き方
 

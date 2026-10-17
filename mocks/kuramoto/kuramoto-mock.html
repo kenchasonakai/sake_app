@@ -1,0 +1,795 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>岩瀬酒造 蔵元カードゲーム</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* 場の考え方: 漆喰の白壁に墨の文字。縦一列のスマホ盤面で、上に状況、中央に自分の蔵、下に人と手札、操作は画面下の帯と下から開くシート。
+   仕込みのマスは利き猪口の蛇の目（藍の二重丸）で埋まっていく。 */
+:root {
+  --bg: #ECEEE9;          /* 漆喰 */
+  --surface: #FAFAF7;     /* 札の地 */
+  --surface-2: #F1F3EE;
+  --ink: #1D2124;         /* 墨 */
+  --muted: #5D655F;
+  --line: #D3D8D0;
+  --ai: #1F4A73;          /* 藍: おはじき、主な操作、選択中 */
+  --ai-soft: #DCE6EF;
+  --on-ai: #FFFFFF;
+  --sugi: #4C6034;        /* 杉玉の緑: 人の札 */
+  --sugi-soft: #E2E9D6;
+  --gold: #85661C;        /* 両 */
+  --bengara: #9B3A2A;     /* 弁柄: トラブル、給料が足りない */
+  --bengara-soft: #F4E0DB;
+  --good: #2F6B45;
+  --good-soft: #DDEEDF;
+  --scrim: rgba(20, 26, 30, .42);
+  --display: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
+  --body: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  --r-card: 12px;
+  --r-chip: 999px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111518; --surface: #192025; --surface-2: #1F282D; --ink: #E4E7E2; --muted: #9AA39C; --line: #2F383E;
+    --ai: #88AFDA; --ai-soft: #1C3247; --on-ai: #0D1824; --sugi: #A7BF84; --sugi-soft: #253020;
+    --gold: #D7B45E; --bengara: #E7887A; --bengara-soft: #3A2420; --good: #8FCB9F; --good-soft: #1D3324;
+    --scrim: rgba(0, 0, 0, .6); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111518; --surface: #192025; --surface-2: #1F282D; --ink: #E4E7E2; --muted: #9AA39C; --line: #2F383E;
+  --ai: #88AFDA; --ai-soft: #1C3247; --on-ai: #0D1824; --sugi: #A7BF84; --sugi-soft: #253020;
+  --gold: #D7B45E; --bengara: #E7887A; --bengara-soft: #3A2420; --good: #8FCB9F; --good-soft: #1D3324;
+  --scrim: rgba(0, 0, 0, .6); color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; font-variant-numeric: tabular-nums; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--surface); }
+button { font: inherit; color: inherit; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--ai); outline-offset: 2px; }
+.inner { max-width: 480px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* 上の帯: ターン、所持金、給料、手順 */
+.hud { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: var(--surface); border-bottom: 1px solid var(--line); }
+.hud .inner { padding-block: 10px 8px; display: grid; gap: 8px; }
+.hud-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.game-name { font-family: var(--display); font-weight: 700; font-size: 15px; letter-spacing: .04em; min-width: 0; }
+.game-name .sec-note { white-space: nowrap; }
+.hud-links { display: flex; gap: 2px; flex: 0 0 auto; }
+.text-btn { white-space: nowrap; background: none; border: 0; padding: 4px 8px; border-radius: 8px; color: var(--ai); font-size: 13px; cursor: pointer; }
+.text-btn:hover { background: var(--ai-soft); }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.stat { background: var(--surface-2); border-radius: 10px; padding: 6px 10px; min-width: 0; }
+.stat .k { font-size: 11px; color: var(--muted); letter-spacing: .06em; }
+.stat .v { font-size: 20px; font-weight: 700; line-height: 1.2; }
+.stat .v small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 2px; }
+.stat.money .v { color: var(--gold); }
+.stat.warn { background: var(--bengara-soft); }
+.stat.warn .v { color: var(--bengara); }
+.steps { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.steps::-webkit-scrollbar { display: none; }
+.step { flex: 0 0 auto; font-size: 11px; padding: 2px 8px; border-radius: var(--r-chip); border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.step.done { color: var(--muted); border-color: transparent; background: var(--surface-2); text-decoration: line-through; text-decoration-color: var(--line); }
+.step.now { background: var(--ai); border-color: var(--ai); color: var(--on-ai); font-weight: 700; }
+
+main .inner { padding-block: 14px 132px; display: grid; gap: 18px; }
+.sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.sec-title { font-family: var(--display); font-weight: 700; font-size: 17px; margin: 0; letter-spacing: .04em; }
+.sec-note { font-size: 12px; color: var(--muted); }
+
+/* イベント札 */
+.event { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--ai); border-radius: var(--r-card); padding: 12px 14px; display: grid; gap: 6px; }
+.event.trouble { border-left-color: var(--bengara); }
+.event.choice { border-left-color: var(--gold); }
+.event-kind { font-size: 11px; letter-spacing: .08em; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.event-title { font-family: var(--display); font-weight: 700; font-size: 18px; line-height: 1.35; }
+.event-effect { font-size: 14px; }
+.event-origin { font-size: 12px; color: var(--muted); }
+.event-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.status-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.status { font-size: 12px; padding: 3px 10px; border-radius: var(--r-chip); background: var(--ai-soft); color: var(--ink); }
+.status.bad { background: var(--bengara-soft); }
+
+/* 自分の蔵: 酒の札 */
+.brew { display: grid; gap: 10px; }
+.sake { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card); padding: 12px 14px; display: grid; gap: 8px; text-align: left; width: 100%; }
+.sake.target { border-color: var(--ai); box-shadow: 0 0 0 2px var(--ai-soft); cursor: pointer; }
+.sake.done { border-color: var(--good); box-shadow: 0 0 0 2px var(--good-soft); }
+.sake-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.sake-name { font-family: var(--display); font-weight: 700; font-size: 17px; line-height: 1.35; min-width: 0; }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.tag { font-size: 11px; padding: 0 7px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+.price { text-align: right; flex: 0 0 auto; }
+.price .v { font-size: 18px; font-weight: 700; color: var(--gold); line-height: 1.2; }
+.price .k { font-size: 11px; color: var(--muted); }
+.gauge { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mark { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--surface-2); }
+.mark.on { border-color: var(--ai); background: var(--ai); box-shadow: inset 0 0 0 4px var(--ai), inset 0 0 0 6px var(--surface); }
+.mark.ghost { border: 2px dashed var(--ai); background: var(--ai-soft); }
+.gauge-note { font-size: 12px; color: var(--muted); margin-left: 4px; }
+.placed { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 28px; }
+.placed-empty { font-size: 12px; color: var(--muted); }
+.pchip { font-size: 12px; padding: 3px 10px; border-radius: var(--r-chip); background: var(--sugi-soft); color: var(--ink); border: 1px solid transparent; cursor: pointer; }
+.pchip b { color: var(--sugi); font-weight: 700; }
+.pchip.zero { background: var(--bengara-soft); }
+.sake-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.slot-empty { border: 1.5px dashed var(--line); border-radius: var(--r-card); padding: 16px; text-align: center; color: var(--muted); background: transparent; width: 100%; cursor: pointer; }
+.slot-empty:hover { border-color: var(--ai); color: var(--ai); }
+.mini-btn { font-size: 12px; padding: 3px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; }
+.mini-btn.danger { border-color: var(--bengara); color: var(--bengara); }
+
+/* 人の札 */
+.people { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.person { background: var(--surface); border: 1px solid var(--line); border-top: 3px solid var(--sugi); border-radius: 10px; padding: 8px 10px; text-align: left; display: grid; gap: 2px; min-width: 0; cursor: pointer; }
+.person.sel { border-color: var(--ai); border-top-color: var(--ai); box-shadow: 0 0 0 2px var(--ai-soft); }
+.person.ability { border-top-color: var(--gold); cursor: default; }
+.person.temp { border-style: dashed; }
+.role { font-weight: 700; font-size: 14px; display: flex; justify-content: space-between; gap: 6px; }
+.role .where { font-weight: 500; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pname { font-size: 12px; color: var(--muted); }
+.peff { font-size: 12px; }
+
+/* 手札 */
+.hand { display: flex; flex-wrap: wrap; gap: 6px; }
+.mat { font-size: 13px; padding: 6px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); }
+.mat.rice { border-left: 3px solid var(--gold); }
+.mat.koji { border-left: 3px solid var(--sugi); }
+.mat.yeast { border-left: 3px solid var(--ai); }
+.over5 { color: var(--bengara); font-weight: 700; }
+
+.hint { font-size: 13px; background: var(--ai-soft); border-radius: 10px; padding: 8px 12px; }
+.disclaimer { font-size: 12px; color: var(--muted); }
+
+/* 下の帯 */
+.bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.bar .inner { padding-block: 10px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.bar .open { border: 1px solid var(--line); background: var(--surface-2); border-radius: 10px; padding: 6px 4px; font-size: 13px; cursor: pointer; line-height: 1.3; }
+.bar .open small { display: block; font-size: 11px; color: var(--muted); }
+.primary { grid-column: 1 / -1; background: var(--ai); color: var(--on-ai); border: 0; border-radius: 12px; padding: 12px; font-weight: 700; font-size: 16px; cursor: pointer; }
+.primary:disabled { opacity: .45; cursor: not-allowed; }
+.btn { border: 1px solid var(--ai); color: var(--ai); background: var(--surface); border-radius: 10px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.btn.solid { background: var(--ai); color: var(--on-ai); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* 下から開くシート */
+.scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: var(--bg); width: 100%; max-width: 520px; max-height: 86%; border-radius: 16px 16px 0 0; display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom, 0px); }
+.sheet-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 14px max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px)); }
+.sheet-title { font-family: var(--display); font-weight: 700; font-size: 18px; margin: 0; }
+.sheet-body { overflow-y: auto; padding: 4px max(16px, env(safe-area-inset-right, 0px)) 20px max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 10px; }
+.row-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card); padding: 10px 12px; display: grid; gap: 6px; }
+.row-card .line { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.row-card .need { font-size: 12px; color: var(--muted); }
+.row-card .need .miss { color: var(--bengara); }
+.row-card .say { font-size: 12px; color: var(--muted); }
+.ship-item { background: var(--surface); border: 1px solid var(--good); border-radius: var(--r-card); padding: 12px 14px; display: grid; gap: 4px; }
+.ship-name { font-family: var(--display); font-weight: 700; font-size: 19px; }
+.ship-value { font-size: 22px; font-weight: 700; color: var(--gold); }
+.ship-calc { font-size: 12px; color: var(--muted); }
+.ship-say { font-size: 14px; }
+.end-big { font-size: 40px; font-weight: 700; color: var(--gold); line-height: 1.1; }
+.rank { font-family: var(--display); font-size: 28px; font-weight: 700; }
+.share { width: 100%; min-height: 84px; border: 1px solid var(--line); border-radius: 10px; padding: 8px; font: inherit; font-size: 13px; background: var(--surface); color: var(--ink); resize: vertical; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(132px + env(safe-area-inset-bottom, 0px)); z-index: 50; background: var(--ink); color: var(--bg); font-size: 13px; padding: 8px 14px; border-radius: 10px; max-width: min(440px, calc(100% - 32px)); }
+.dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; margin: 0; }
+.dl dt { color: var(--muted); }
+.dl dd { margin: 0; }
+ol.steps-list { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; }
+@media (prefers-reduced-motion: no-preference) {
+  .mark.on { transition: background .2s; }
+  .sheet { animation: up .18s ease-out; }
+  @keyframes up { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+}
+</style>
+
+<header class="hud">
+  <div class="inner">
+    <div class="hud-top">
+      <div class="game-name">岩瀬酒造 蔵元カードゲーム<span class="sec-note">（仮）</span></div>
+      <div class="hud-links">
+        <button class="text-btn" data-act="open" data-sheet="help">遊び方</button>
+        <button class="text-btn" data-act="open" data-sheet="newgame">最初から</button>
+      </div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div class="steps" id="steps" aria-label="ターンの手順"></div>
+  </div>
+</header>
+
+<main>
+  <div class="inner">
+    <section aria-labelledby="ev-h">
+      <div class="sec-head"><h2 class="sec-title" id="ev-h">今ターンのイベント</h2></div>
+      <div id="event"></div>
+    </section>
+
+    <section aria-labelledby="brew-h">
+      <div class="sec-head"><h2 class="sec-title" id="brew-h">自分の蔵</h2><span class="sec-note" id="brew-note"></span></div>
+      <div class="hint" id="hint"></div>
+      <div class="brew" id="brew" style="margin-top:10px"></div>
+    </section>
+
+    <section aria-labelledby="ppl-h">
+      <div class="sec-head"><h2 class="sec-title" id="ppl-h">雇っている人</h2><span class="sec-note" id="ppl-note"></span></div>
+      <div class="people" id="people"></div>
+    </section>
+
+    <section aria-labelledby="hand-h">
+      <div class="sec-head"><h2 class="sec-title" id="hand-h">手札</h2><span class="sec-note" id="hand-note"></span></div>
+      <div class="hand" id="hand"></div>
+    </section>
+
+    <p class="disclaimer">ハッカソンの試作です。岩瀬酒造の公式のものではありません。数字はすべて仮です。最初の画面は 7 ターン目の見本で、そのまま続きを遊べます。</p>
+  </div>
+</main>
+
+<nav class="bar" aria-label="操作">
+  <div class="inner">
+    <button class="open" data-act="open" data-sheet="market">酒の場<small>仕込む</small></button>
+    <button class="open" data-act="open" data-sheet="recruit">求人の場<small>雇う</small></button>
+    <button class="open" data-act="open" data-sheet="shop">取引先<small id="buy-left">買う</small></button>
+    <button class="primary" id="advance" data-act="advance">人を置いて、仕込みを進める</button>
+  </div>
+</nav>
+
+<div id="sheet-root"></div>
+<div id="toast-root"></div>
+
+<script>
+(() => {
+  // ---------- データ（設計書の仮の数字） ----------
+  const RICES = ["山田錦", "五百万石", "総の舞", "きたしずく", "愛山"];
+  const PRICE = { "山田錦": 2, "五百万石": 1, "総の舞": 1, "きたしずく": 1, "愛山": 1, "麹": 1, "酵母": 1 };
+  const DECK = { "山田錦": 8, "五百万石": 7, "総の舞": 5, "きたしずく": 5, "愛山": 3, "麹": 14, "酵母": 10 };
+  const SAKES = [
+    { id: "gohyaku", name: "i240 五百万石", needs: { "五百万石": 1, "麹": 1, "酵母": 1 }, gauge: 2, rev: 6, spec: "船頭", tags: ["i240"], say: "i240の原点。美酒アワード2026フレンチ部門で三ツ星。" },
+    { id: "fusa", name: "i240 総の舞", needs: { "総の舞": 1, "麹": 1, "酵母": 1 }, gauge: 2, rev: 7, spec: "船頭", tags: ["i240"], say: "千葉県でしか栽培されていない酒米で造る。" },
+    { id: "aiyama", name: "i240 愛山", needs: { "愛山": 1, "麹": 1, "酵母": 1 }, gauge: 2, rev: 8, spec: "船頭", tags: ["i240"], say: "希少な酒米。上品な甘みと果実の香り。" },
+    { id: "kita", name: "i240 きたしずく", needs: { "きたしずく": 1, "麹": 1, "酵母": 1 }, gauge: 2, rev: 7, spec: "船頭", tags: ["i240", "夏酒"], say: "北海道産の酒米で造る夏酒。" },
+    { id: "karakuchi", name: "山廃純米辛口", needs: { ANY: 1, "麹": 1 }, gauge: 4, rev: 12, spec: "酛屋", tags: ["山廃"], say: "冷やからお燗まで。全国燗酒コンテスト2021金賞。" },
+    { id: "yamahai240", name: "i240 山廃・山田錦", needs: { "山田錦": 1, "麹": 1, "酵母": 1 }, gauge: 4, rev: 12, spec: "酛屋", tags: ["i240", "山廃"], say: "全国燗酒コンテスト2024金賞。" },
+    { id: "daiginjo", name: "山廃純米大吟醸", needs: { "山田錦": 2, "麹": 1 }, gauge: 6, rev: 18, spec: "酛屋", tags: ["山廃"], say: "ロバート・パーカーの評価で95点（2017年）。" },
+    { id: "nakagumi", name: "純米大吟醸 山田錦30% 中汲み", needs: { "山田錦": 3, "麹": 1 }, gauge: 6, rev: 22, spec: "船頭", tags: [], say: "兵庫県産山田錦を30%まで磨き、搾りの中ほどを取り分けた酒。" },
+    { id: "koshu20", name: "秘蔵古酒20年", needs: { ANY: 1, "麹": 1 }, gauge: 8, rev: 22, spec: "蔵守", tags: ["古酒"], say: "20年以上の熟成。チーズやチョコレートにも合う。" },
+    { id: "heiwa", name: "平・和の調べ", needs: { ANY: 2, "麹": 1 }, gauge: 6, rev: 16, spec: "蔵守", tags: ["古酒"], say: "6種の古酒をソムリエがブレンド。鴨のローストに。" },
+  ];
+  const SAKE = Object.fromEntries(SAKES.map(s => [s.id, s]));
+  const ROLES = {
+    "蔵人": { fee: 2, kind: "any", eff: "どの酒でも1マス" },
+    "酛屋": { fee: 4, kind: "spec", eff: "山廃の酒で2マス、ほかは0" },
+    "船頭": { fee: 4, kind: "spec", eff: "i240と中汲みで2マス、ほかは0" },
+    "蔵守": { fee: 4, kind: "spec", eff: "古酒で2マス、ほかは0" },
+    "麹屋": { fee: 4, kind: "ability", eff: "仕込みの麹が1枚少なくて済む（1ターン1回）" },
+    "仕入れ係": { fee: 4, kind: "ability", eff: "毎ターン山札から1枚多く引く" },
+    "帳場": { fee: 4, kind: "ability", eff: "取引先の素材が1ターン1枚まで無料" },
+    "営業": { fee: 4, kind: "ability", eff: "同じ酒の値下がりが1段ゆるい" },
+  };
+  const RECRUITS = [
+    ["蔵人", "大原 拓", "夏は海の家、冬は蔵で働く"], ["蔵人", "勝浦 ひなた", "蔵見学で日本酒に目覚めた"],
+    ["蔵人", "布施 健吾", "米農家。田んぼが休みの冬に"], ["蔵人", "鵜原 奈央", "去年まで東京で会社員"],
+    ["蔵人", "岩和田 大地", "地元の高校を出たばかり"], ["蔵人", "白浜 律", "体を動かすのが好き"],
+    ["酛屋", "関 正造", "山廃の酛を育てて三十年"], ["酛屋", "堀田 早苗", "酛は子育てと同じ、が口癖"],
+    ["船頭", "浜野 修", "搾りの加減は手で覚えた"], ["船頭", "川名 透", "槽口から目を離さない"],
+    ["蔵守", "古川 静", "古いタンクの顔色が分かる"], ["蔵守", "蔵持 栄一", "二十年ものの酒の番人"],
+    ["麹屋", "室井 恵", "麹室の温度は体が覚えている"], ["仕入れ係", "米倉 賢", "農家さんとの付き合いが長い"],
+    ["帳場", "吉野 由紀", "帳簿と天気予報を毎朝見る"], ["営業", "早瀬 航", "どの酒も一言で売り込める"],
+  ];
+  const FIRST_CREW = [["蔵人", "浜田 湊", "網元の家の三男。力仕事なら任せて"], ["蔵人", "岩崎 しのぶ", "朝が早いのが自慢"]];
+  const EVENTS = [
+    { id: "summit", w: 1, kind: "嬉しいこと", title: "サミットの乾杯酒", eff: "次に出荷する酒の売上が1.5倍", origin: "1986年の東京サミットの晩餐会で乾杯酒に選ばれた", buff: { k: "mult", v: 1.5, label: "次の出荷 1.5倍" } },
+    { id: "bishu", w: 1, kind: "嬉しいこと", title: "美酒アワードの三ツ星", eff: "次に出荷するi240の売上が1.5倍", origin: "i240 五百万石が2026年にフレンチ部門で三ツ星", buff: { k: "mult", v: 1.5, tag: "i240", label: "次のi240 1.5倍" } },
+    { id: "kanzake", w: 1, kind: "嬉しいこと", title: "燗酒コンテスト金賞", eff: "次に出荷する山廃の酒の売上が1.5倍", origin: "山廃純米辛口（2021年）とi240 山廃・山田錦（2024年）が金賞", buff: { k: "mult", v: 1.5, tag: "山廃", label: "次の山廃 1.5倍" } },
+    { id: "parker", w: 1, kind: "嬉しいこと", title: "パーカーポイント95点", eff: "次に出荷する山廃純米大吟醸の売上が2倍", origin: "山廃純米大吟醸が2017年に95点", buff: { k: "mult", v: 2, only: "daiginjo", label: "次の山廃純米大吟醸 2倍" } },
+    { id: "crowd", w: 1, kind: "嬉しいこと", title: "クラファン大成功", eff: "取引先から好きな素材を2枚、無料でもらえる", origin: "2026年の古酒のクラウドファンディングが、目標30万円に対し約229万円を集めた", choice: "pick2" },
+    { id: "nanbu", w: 2, kind: "嬉しいこと", title: "南部から応援", eff: "このターンだけ、蔵人が1人増える（給料なし）", origin: "南部から来た蔵人が仕込みをしている" },
+    { id: "export", w: 2, kind: "嬉しいこと", title: "海外の商談がまとまる", eff: "すぐ5両もらう", origin: "海外への出荷に取り組んでいる" },
+    { id: "magazine", w: 2, kind: "嬉しいこと", title: "雑誌に載る", eff: "次に出荷する酒の売上が3両増える", origin: "架空", buff: { k: "add", v: 3, label: "次の出荷 +3両" } },
+    { id: "harvest", w: 2, kind: "嬉しいこと", title: "米がよく取れた", eff: "山札から2枚引く", origin: "架空" },
+    { id: "visit", w: 2, kind: "嬉しいこと", title: "蔵見学のお客さん", eff: "すぐ2両もらう", origin: "架空" },
+    { id: "riceup", w: 2, kind: "トラブル", title: "酒米の値上がり", eff: "3ターンの間、取引先の米の値段が2倍", origin: "2026年、酒米の価格が2倍近くに上がった" },
+    { id: "breakdown", w: 2, kind: "トラブル", title: "機械の故障", eff: "2両払うか、どれか1つの酒のマスを1つ戻すかを選ぶ", origin: "架空", choice: "breakdown" },
+    { id: "typhoon", w: 2, kind: "トラブル", title: "台風で停電", eff: "このターン、置ける人が1人減る", origin: "架空" },
+    { id: "quit", w: 2, kind: "トラブル", title: "離職", eff: "一番最近雇った人が辞める。契約金は戻らない", origin: "架空" },
+    { id: "badkoji", w: 1, kind: "トラブル", title: "麹の出来が悪い", eff: "手札の麹を1枚捨てる", origin: "架空" },
+    { id: "interview", w: 2, kind: "選ぶ札", title: "取材の依頼", eff: "受けると、このターン置ける人が1人減るかわりに、次に出荷する酒の売上が4両増える", origin: "架空", choice: "interview" },
+    { id: "newrice", w: 2, kind: "選ぶ札", title: "新しい酒米の提案", eff: "3両払えば、好きな米を2枚もらえる", origin: "架空", choice: "newrice" },
+    { id: "tasting", w: 2, kind: "選ぶ札", title: "試飲会への出店", eff: "2両払えば、次に出荷する酒の売上が1.5倍", origin: "架空", choice: "tasting" },
+  ];
+  const STEPS = ["イベント", "引く", "雇う", "買う", "仕込む", "置く", "出荷", "給料"];
+  const TURNS = 20, HAND_MAX = 5, BREW_MAX = 3, SALARY = 1;
+  const RANKS = [[170, "S"], [140, "A"], [110, "B"], [-Infinity, "C"]]; // 仮
+  const SHOP_URL = "https://iwanoi.base.ec/";
+
+  // ---------- 乱数 ----------
+  function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  function shuffle(arr, R) { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; }
+
+  // ---------- 状態 ----------
+  let S, R, uid = 0;
+  const nid = () => ++uid;
+  const isRice = m => RICES.includes(m);
+  const matClass = m => isRice(m) ? "rice" : m === "麹" ? "koji" : "yeast";
+
+  function baseState(seed) {
+    R = rng(seed);
+    const deck = shuffle(Object.entries(DECK).flatMap(([m, n]) => Array.from({ length: n }, () => m)), R);
+    const rdeck = shuffle(RECRUITS.map(([role, name, line]) => ({ id: nid(), role, name, line })), R);
+    return {
+      seed, turn: 1, money: 12, deck, discard: [], hand: [], rdeck, rdiscard: [], field: [],
+      hired: FIRST_CREW.map(([role, name, line]) => ({ id: nid(), role, name, line, at: 0 })),
+      brew: [], assign: {}, ships: {}, buff: null, riceUp: 0, event: null, pending: null, temp: null, placeMinus: 0,
+      buysLeft: 2, freeBuy: false, kojiFree: false, refreshed: false, shippedLog: [], selected: null, confirmQuit: null, over: null, flow: "work",
+    };
+  }
+  function drawCard() {
+    if (!S.deck.length) { if (!S.discard.length) return null; S.deck = shuffle(S.discard, R); S.discard = []; }
+    return S.deck.pop();
+  }
+  function fillField() {
+    while (S.field.length < 3) {
+      if (!S.rdeck.length) { if (!S.rdiscard.length) break; S.rdeck = shuffle(S.rdiscard, R); S.rdiscard = []; }
+      S.field.push(S.rdeck.pop());
+    }
+  }
+  const has = role => S.hired.some(p => p.role === role);
+
+  function newGame(seed) {
+    S = baseState(seed);
+    for (let i = 0; i < 3; i++) S.hand.push({ id: nid(), m: drawCard(), bought: false });
+    fillField();
+    startTurn();
+  }
+
+  // 見本: 7ターン目の途中
+  function sampleGame() {
+    S = baseState(7);
+    const take = m => { const i = S.deck.indexOf(m); if (i >= 0) S.deck.splice(i, 1); return m; };
+    S.turn = 7; S.money = 18;
+    const pick = role => { const i = S.rdeck.findIndex(c => c.role === role); return S.rdeck.splice(i, 1)[0]; };
+    S.hired.push({ ...pick("酛屋"), at: 3 }, { ...pick("営業"), at: 5 });
+    S.field = [pick("蔵守"), pick("蔵人"), pick("仕入れ係")];
+    S.brew = [{ id: "karakuchi", filled: 2 }, { id: "fusa", filled: 0 }, { id: "koshu20", filled: 3 }];
+    S.ships = { gohyaku: 2, karakuchi: 1, aiyama: 1 };
+    S.shippedLog = [{ id: "gohyaku", v: 6, t: 2 }, { id: "aiyama", v: 8, t: 3 }, { id: "gohyaku", v: 4, t: 4 }, { id: "karakuchi", v: 12, t: 6 }];
+    ["山田錦", "麹", "酵母", "五百万石"].forEach(m => S.hand.push({ id: nid(), m: take(m), bought: false }));
+    // 使った分を捨て札へ（見本の帳尻あわせ）
+    for (let i = 0; i < 14; i++) S.discard.push(S.deck.pop());
+    S.event = EVENTS.find(e => e.id === "kanzake");
+    S.buff = { ...S.event.buff };
+    S.pending = null;
+    S.hint = "見本の 7 ターン目です。イベントで「次の山廃 1.5倍」を持っています。人をタップしてから酒の札をタップすると置けます。";
+  }
+
+  function startTurn() {
+    S.buysLeft = 2; S.freeBuy = has("帳場"); S.kojiFree = has("麹屋"); S.refreshed = false;
+    S.placeMinus = 0; S.temp = null; S.pending = null; S.selected = null; S.confirmQuit = null; S.flow = "work";
+    // 手順1 イベント
+    const total = EVENTS.reduce((a, e) => a + e.w, 0);
+    let r = R() * total, ev = EVENTS[0];
+    for (const e of EVENTS) { r -= e.w; if (r < 0) { ev = e; break; } }
+    S.event = ev;
+    let note = applyEvent(ev);
+    // 手順2 引く
+    const n = 2 + (has("仕入れ係") ? 1 : 0), got = [];
+    for (let i = 0; i < n; i++) { const m = drawCard(); if (m) { S.hand.push({ id: nid(), m, bought: false }); got.push(m); } }
+    S.hint = `${S.turn}ターン目。${got.length ? got.join("・") + "を引きました。" : "山札がありません。"}${note ? " " + note : ""}`;
+    // 置いた人は前のターンのまま（いなくなった酒の分は外す）
+    for (const pid of Object.keys(S.assign)) if (!S.brew.some(b => b.id === S.assign[pid]) || !S.hired.some(p => String(p.id) === pid)) delete S.assign[pid];
+  }
+
+  function setBuff(b) {
+    if (S.buff) return "すでに出荷の効果を持っているので、何も起きません。";
+    S.buff = { ...b }; return "";
+  }
+  function applyEvent(ev) {
+    switch (ev.id) {
+      case "summit": case "bishu": case "kanzake": case "parker": case "magazine": return setBuff(ev.buff);
+      case "crowd": S.pending = { type: "pick2", left: 2 }; return "";
+      case "nanbu": S.temp = { id: "temp", role: "蔵人", name: "南部の応援", line: "このターンだけ手伝う", temp: true }; return "";
+      case "export": S.money += 5; return "";
+      case "harvest": for (let i = 0; i < 2; i++) { const m = drawCard(); if (m) S.hand.push({ id: nid(), m, bought: false }); } return "";
+      case "visit": S.money += 2; return "";
+      case "riceup": S.riceUp = 3; return "";
+      case "breakdown": {
+        const any = S.brew.some(b => b.filled > 0);
+        if (S.money < 2 && !any) return "払えず、戻すマスもないので何も起きません。";
+        S.pending = { type: "breakdown" }; return "";
+      }
+      case "typhoon": S.placeMinus += 1; return "";
+      case "quit": {
+        const later = S.hired.filter(p => p.at > 0);
+        if (!later.length) return "最初の蔵人しかいないので、何も起きません。";
+        const last = later.reduce((a, b) => (b.at >= a.at ? b : a));
+        S.hired = S.hired.filter(p => p !== last); delete S.assign[last.id]; S.rdiscard.push(last);
+        return `${last.role}の${last.name}さんが辞めました。`;
+      }
+      case "badkoji": { const i = S.hand.findIndex(c => c.m === "麹"); if (i >= 0) { const [c] = S.hand.splice(i, 1); if (!c.bought) S.discard.push(c.m); return "麹を1枚捨てました。"; } return "手札に麹がないので、何も起きません。"; }
+      case "interview": S.pending = { type: "interview" }; return "";
+      case "newrice": if (S.money < 3) return "払えないので見送りました。"; S.pending = { type: "newrice" }; return "";
+      case "tasting": if (S.money < 2) return "払えないので見送りました。"; S.pending = { type: "tasting" }; return "";
+    }
+    return "";
+  }
+
+  // ---------- 計算 ----------
+  const workers = () => [...S.hired.filter(p => ROLES[p.role].kind !== "ability"), ...(S.temp ? [S.temp] : [])];
+  const placeLimit = () => Math.max(0, workers().length - S.placeMinus);
+  const assignedCount = () => Object.keys(S.assign).length;
+  function personOf(pid) { return pid === "temp" ? S.temp : S.hired.find(p => String(p.id) === String(pid)); }
+  function marksBy(person, sakeId) {
+    const k = ROLES[person.role].kind;
+    if (k === "any") return 1;
+    if (k === "spec") return SAKE[sakeId].spec === person.role ? 2 : 0;
+    return 0;
+  }
+  function planned(sakeId) {
+    let n = 0;
+    for (const [pid, sid] of Object.entries(S.assign)) if (sid === sakeId) { const p = personOf(pid); if (p) n += marksBy(p, sakeId); }
+    return n;
+  }
+  function decayRate(id) {
+    const n = S.ships[id] || 0;
+    const steps = has("営業") ? [1, 1, .8] : [1, .8, .6];
+    return steps[Math.min(n, 2)];
+  }
+  function buffApplies(b, s) { return !b.tag && !b.only || (b.tag && s.tags.includes(b.tag)) || (b.only === s.id); }
+  function priceOf(m) { return PRICE[m] * (S.riceUp > 0 && isRice(m) ? 2 : 1); }
+  function salaryTotal() { return S.hired.length * SALARY; }
+
+  function payPlan(sake) {
+    const needs = { ...sake.needs };
+    if (S.kojiFree && needs["麹"]) needs["麹"] -= 1;
+    const pool = [...S.hand];
+    const pay = [], miss = [];
+    for (const m of ["麹", "酵母", ...RICES]) for (let i = 0; i < (needs[m] || 0); i++) {
+      const j = pool.findIndex(c => c.m === m); if (j >= 0) pay.push(pool.splice(j, 1)[0]); else miss.push(m);
+    }
+    for (let i = 0; i < (needs.ANY || 0); i++) {
+      const cands = pool.filter(c => isRice(c.m)).sort((a, b) => (a.m === "山田錦") - (b.m === "山田錦"));
+      if (cands.length) { pay.push(cands[0]); pool.splice(pool.indexOf(cands[0]), 1); } else miss.push("どの米でも");
+    }
+    return { pay, miss, kojiSaved: S.kojiFree && sake.needs["麹"] > 0 };
+  }
+  const needText = s => Object.entries(s.needs).map(([m, n]) => (m === "ANY" ? "どの米でも" : m) + (n > 1 ? "×" + n : "")).join("・");
+
+  // ---------- 操作 ----------
+  function toast(msg) {
+    const root = document.getElementById("toast-root");
+    root.innerHTML = `<div class="toast" role="status">${msg}</div>`;
+    clearTimeout(toast.t); toast.t = setTimeout(() => { root.innerHTML = ""; }, 2600);
+  }
+  const blocked = () => { if (S.over) return true; if (S.pending) { toast("先にイベント札の選択を決めてください。"); return true; } return false; };
+
+  function hire(cid) {
+    if (blocked()) return;
+    const i = S.field.findIndex(c => c.id === cid); const c = S.field[i];
+    const fee = ROLES[c.role].fee;
+    if (S.money < fee) return toast("契約金が足りません。");
+    S.money -= fee; S.field.splice(i, 1); S.hired.push({ ...c, at: S.turn }); fillField();
+    toast(`${c.role}の${c.name}さんを雇いました。給料は毎ターン1両です。`);
+    render(); openSheet("recruit");
+  }
+  function refreshField() {
+    if (blocked()) return;
+    if (S.refreshed) return toast("入れ替えは1ターン1回です。");
+    if (S.money < 1) return toast("1両足りません。");
+    S.money -= 1; S.refreshed = true; S.rdiscard.push(...S.field); S.field = []; fillField();
+    render(); openSheet("recruit");
+  }
+  function buy(m) {
+    if (blocked()) return;
+    if (S.buysLeft <= 0) return toast("取引先で買えるのは1ターン2枚までです。");
+    const p = S.freeBuy ? 0 : priceOf(m);
+    if (S.money < p) return toast("お金が足りません。");
+    S.money -= p; if (S.freeBuy) S.freeBuy = false; S.buysLeft -= 1;
+    S.hand.push({ id: nid(), m, bought: true });
+    render(); openSheet("shop");
+  }
+  function startSake(id) {
+    if (blocked()) return;
+    if (S.brew.length >= BREW_MAX) return toast("自分の蔵には3枚までです。");
+    const s = SAKE[id]; const plan = payPlan(s);
+    if (plan.miss.length) return toast("素材が足りません: " + plan.miss.join("・"));
+    for (const c of plan.pay) { S.hand.splice(S.hand.indexOf(c), 1); if (!c.bought) S.discard.push(c.m); }
+    if (plan.kojiSaved) S.kojiFree = false;
+    S.brew.push({ id, filled: 0 });
+    closeSheet(); toast(`${s.name}の仕込みを始めました。`); render();
+  }
+  function quitSake(id) {
+    if (S.confirmQuit !== id) { S.confirmQuit = id; render(); return; }
+    S.brew = S.brew.filter(b => b.id !== id);
+    for (const pid of Object.keys(S.assign)) if (S.assign[pid] === id) delete S.assign[pid];
+    S.confirmQuit = null; toast("仕込みをやめました。札は酒の場に戻りました。"); render();
+  }
+  function selectPerson(pid) {
+    if (S.over) return;
+    const p = personOf(pid); if (!p || ROLES[p.role].kind === "ability") return;
+    S.selected = S.selected === String(pid) ? null : String(pid); render();
+  }
+  function placeOn(sakeId) {
+    if (!S.selected) return;
+    const pid = S.selected; const already = pid in S.assign;
+    if (!already && assignedCount() >= placeLimit()) { toast(`このターン置けるのは${placeLimit()}人までです。`); return; }
+    S.assign[pid] = sakeId; S.selected = null;
+    const p = personOf(pid);
+    if (marksBy(p, sakeId) === 0) toast(`${p.role}はこの酒ではマスを埋められません。`);
+    render();
+  }
+  function unplace(pid) { delete S.assign[pid]; render(); }
+
+  function resolve(kind, arg) {
+    const P = S.pending; if (!P) return;
+    if (P.type === "pick2") { S.hand.push({ id: nid(), m: arg, bought: true }); P.left -= 1; if (P.left <= 0) S.pending = null; }
+    else if (P.type === "breakdown") {
+      if (kind === "pay") S.money -= 2; else if (kind === "mark") { const b = S.brew.find(x => x.id === arg); if (b && b.filled > 0) b.filled -= 1; }
+      S.pending = null;
+    }
+    else if (P.type === "interview") { if (kind === "yes") { S.placeMinus += 1; const n = setBuff({ k: "add", v: 4, label: "次の出荷 +4両" }); if (n) toast(n); trimAssign(); } S.pending = null; }
+    else if (P.type === "newrice") {
+      if (kind === "no") S.pending = null;
+      else if (kind === "pay") { S.money -= 3; P.paid = true; P.left = 2; }
+      else if (kind === "rice") { S.hand.push({ id: nid(), m: arg, bought: true }); P.left -= 1; if (P.left <= 0) S.pending = null; }
+    }
+    else if (P.type === "tasting") { if (kind === "yes") { S.money -= 2; const n = setBuff({ k: "mult", v: 1.5, label: "次の出荷 1.5倍" }); if (n) toast(n); } S.pending = null; }
+    render();
+  }
+  function trimAssign() { const keys = Object.keys(S.assign); while (keys.length > placeLimit()) delete S.assign[keys.pop()]; }
+
+  // 手順6〜8
+  function advance() {
+    if (S.over) return;
+    if (S.pending) return toast("先にイベント札の選択を決めてください。");
+    for (const b of S.brew) b.filled = Math.min(SAKE[b.id].gauge, b.filled + planned(b.id));
+    const done = S.brew.filter(b => b.filled >= SAKE[b.id].gauge);
+    const results = [];
+    // 効果は一番売上の大きい酒に効かせる
+    done.sort((a, b) => SAKE[b.id].rev * decayRate(b.id) - SAKE[a.id].rev * decayRate(a.id));
+    for (const b of done) {
+      const s = SAKE[b.id]; const rate = decayRate(b.id);
+      let v = s.rev * rate; const calc = [`売上${s.rev}両`];
+      if (rate < 1) calc.push(`${S.ships[b.id] + 1}回目なので${Math.round(rate * 100)}%`);
+      if (S.buff && buffApplies(S.buff, s)) { calc.push(S.buff.label.replace(/^次の(出荷|.+?) /, "")); v = S.buff.k === "mult" ? v * S.buff.v : v + S.buff.v; S.buff = null; }
+      v = Math.floor(v);
+      S.money += v; S.ships[b.id] = (S.ships[b.id] || 0) + 1; S.shippedLog.push({ id: b.id, v, t: S.turn });
+      results.push({ s, v, calc: calc.join(" → ") });
+    }
+    S.brew = S.brew.filter(b => !done.includes(b));
+    for (const pid of Object.keys(S.assign)) if (!S.brew.some(b => b.id === S.assign[pid])) delete S.assign[pid];
+    S.flow = "ship"; S.lastShip = results; S.selected = null;
+    render(); openSheet("ship");
+  }
+  function afterShip() {
+    closeSheet();
+    if (S.hand.length > HAND_MAX) { S.flow = "discard"; S.discardSel = []; render(); openSheet("discard"); return; }
+    paySalary();
+  }
+  function doDiscard() {
+    const need = S.hand.length - HAND_MAX;
+    if (S.discardSel.length !== need) return toast(`あと${need - S.discardSel.length}枚選んでください。`);
+    for (const id of S.discardSel) { const i = S.hand.findIndex(c => c.id === id); const [c] = S.hand.splice(i, 1); if (!c.bought) S.discard.push(c.m); }
+    closeSheet(); paySalary();
+  }
+  function paySalary() {
+    S.flow = "salary";
+    const sal = salaryTotal();
+    if (S.money < sal) { S.over = { kind: "bankrupt", turn: S.turn }; render(); openSheet("end"); return; }
+    S.money -= sal;
+    if (S.riceUp > 0) S.riceUp -= 1;
+    if (S.turn >= TURNS) { S.over = { kind: "finish" }; render(); openSheet("end"); return; }
+    S.turn += 1; startTurn(); render(); window.scrollTo({ top: 0 });
+  }
+
+  // ---------- 描画 ----------
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  function render() {
+    const sal = salaryTotal();
+    document.getElementById("stats").innerHTML = `
+      <div class="stat"><div class="k">ターン</div><div class="v">${S.turn}<small>/ ${TURNS}</small></div></div>
+      <div class="stat money"><div class="k">所持金</div><div class="v">${S.money}<small>両</small></div></div>
+      <div class="stat ${S.money < sal ? "warn" : ""}"><div class="k">次の給料</div><div class="v">${sal}<small>両</small></div></div>`;
+    const nowIdx = S.flow === "ship" ? 6 : S.flow === "discard" || S.flow === "salary" ? 7 : S.selected || assignedCount() ? 5 : 2;
+    document.getElementById("steps").innerHTML = STEPS.map((t, i) => `<span class="step ${i < nowIdx && !(nowIdx === 5 && i >= 2) ? "done" : ""} ${i === nowIdx || (nowIdx === 2 && i >= 2 && i <= 5) ? "now" : ""}">${i + 1} ${t}</span>`).join("");
+
+    // イベント
+    const ev = S.event;
+    const kindCls = ev.kind === "トラブル" ? "trouble" : ev.kind === "選ぶ札" ? "choice" : "";
+    let actions = "";
+    const P = S.pending;
+    if (P) {
+      if (P.type === "pick2") actions = `<div class="sec-note">あと${P.left}枚選ぶ</div>` + [...RICES, "麹", "酵母"].map(m => `<button class="btn" data-act="resolve" data-k="pick" data-a="${m}">${m}</button>`).join("");
+      if (P.type === "breakdown") actions = `<button class="btn" data-act="resolve" data-k="pay" ${S.money < 2 ? "disabled" : ""}>2両払う</button>` + S.brew.filter(b => b.filled > 0).map(b => `<button class="btn" data-act="resolve" data-k="mark" data-a="${b.id}">${esc(SAKE[b.id].name)}のマスを1つ戻す</button>`).join("");
+      if (P.type === "interview") actions = `<button class="btn solid" data-act="resolve" data-k="yes">受ける</button><button class="btn" data-act="resolve" data-k="no">断る</button>`;
+      if (P.type === "newrice") actions = P.paid ? `<div class="sec-note">あと${P.left}枚選ぶ</div>` + RICES.map(m => `<button class="btn" data-act="resolve" data-k="rice" data-a="${m}">${m}</button>`).join("") : `<button class="btn solid" data-act="resolve" data-k="pay">3両払う</button><button class="btn" data-act="resolve" data-k="no">見送る</button>`;
+      if (P.type === "tasting") actions = `<button class="btn solid" data-act="resolve" data-k="yes">2両払う</button><button class="btn" data-act="resolve" data-k="no">見送る</button>`;
+    }
+    const statuses = [];
+    if (S.buff) statuses.push(`<span class="status">持っている効果: ${esc(S.buff.label)}</span>`);
+    if (S.riceUp > 0) statuses.push(`<span class="status bad">米の値上がり あと${S.riceUp}ターン</span>`);
+    if (S.placeMinus > 0) statuses.push(`<span class="status bad">置ける人 −${S.placeMinus}</span>`);
+    document.getElementById("event").innerHTML = `
+      <div class="event ${kindCls}">
+        <div class="event-kind"><span>${ev.kind}</span></div>
+        <div class="event-title">${esc(ev.title)}</div>
+        <div class="event-effect">${esc(ev.eff)}</div>
+        <div class="event-origin">もとになった話: ${esc(ev.origin)}</div>
+        ${actions ? `<div class="event-actions">${actions}</div>` : ""}
+      </div>
+      ${statuses.length ? `<div class="status-row" style="margin-top:8px">${statuses.join("")}</div>` : ""}`;
+
+    // ヒント
+    let hint = S.hint || "";
+    if (S.selected) { const p = personOf(S.selected); hint = `${p.role}の${p.name}さんを選んでいます。置きたい酒の札をタップしてください。`; }
+    document.getElementById("hint").textContent = hint;
+
+    // 自分の蔵
+    document.getElementById("brew-note").textContent = `仕込み中 ${S.brew.length} / ${BREW_MAX}`;
+    const brewHtml = S.brew.map(b => {
+      const s = SAKE[b.id]; const add = planned(b.id); const after = Math.min(s.gauge, b.filled + add);
+      const marks = Array.from({ length: s.gauge }, (_, i) => `<span class="mark ${i < b.filled ? "on" : i < after ? "ghost" : ""}"></span>`).join("");
+      const people = Object.entries(S.assign).filter(([, sid]) => sid === b.id).map(([pid]) => { const p = personOf(pid); const m = marksBy(p, b.id); return `<button class="pchip ${m === 0 ? "zero" : ""}" data-act="unplace" data-pid="${pid}" aria-label="${esc(p.name)}さんを外す">${esc(p.role)} ${esc(p.name.split(" ")[0])} <b>+${m}</b></button>`; }).join("");
+      const rate = decayRate(b.id);
+      const willShip = after >= s.gauge;
+      const target = S.selected ? "target" : "";
+      return `<div class="sake ${target} ${willShip ? "done" : ""}" ${S.selected ? `role="button" tabindex="0" data-act="place" data-sake="${b.id}"` : ""}>
+        <div class="sake-top">
+          <div style="min-width:0"><div class="sake-name">${esc(s.name)}</div><div class="tags">${s.tags.map(t => `<span class="tag">${t}</span>`).join("")}<span class="tag">得意: ${s.spec}</span></div></div>
+          <div class="price"><div class="v">${Math.floor(s.rev * rate)}両</div><div class="k">${rate < 1 ? `${(S.ships[b.id] || 0) + 1}回目 ${Math.round(rate * 100)}%` : "売上"}</div></div>
+        </div>
+        <div class="gauge" aria-label="${b.filled}マス埋まっている。全部で${s.gauge}マス">${marks}<span class="gauge-note">${b.filled}/${s.gauge}${add ? ` → ${after}` : ""}</span></div>
+        <div class="placed">${people || `<span class="placed-empty">${S.selected ? "ここに置く" : "まだ誰も置いていません"}</span>`}</div>
+        <div class="sake-foot"><span>${willShip ? "このターンで出荷できます" : `あと${s.gauge - after}マス`}</span>
+          <button class="mini-btn ${S.confirmQuit === b.id ? "danger" : ""}" data-act="quit" data-sake="${b.id}">${S.confirmQuit === b.id ? "やめる（マスと素材は戻らない）" : "やめる"}</button></div>
+      </div>`;
+    }).join("");
+    const empties = Array.from({ length: BREW_MAX - S.brew.length }, () => `<button class="slot-empty" data-act="open" data-sheet="market">空いている枠 ・ 酒の場から仕込む</button>`).join("");
+    document.getElementById("brew").innerHTML = brewHtml + empties;
+
+    // 人
+    const all = [...S.hired, ...(S.temp ? [S.temp] : [])];
+    document.getElementById("ppl-note").textContent = `置いた人 ${assignedCount()} / ${placeLimit()} ・ 給料 ${salaryTotal()}両`;
+    document.getElementById("people").innerHTML = all.map(p => {
+      const k = ROLES[p.role].kind; const where = S.assign[p.id] ? SAKE[S.assign[p.id]].name : k === "ability" ? "雇っているだけで効く" : "未配置";
+      return `<button class="person ${k === "ability" ? "ability" : ""} ${p.temp ? "temp" : ""} ${S.selected === String(p.id) ? "sel" : ""}" data-act="select" data-pid="${p.id}" ${k === "ability" ? 'aria-disabled="true"' : ""}>
+        <span class="role"><span>${esc(p.role)}</span><span class="where">${esc(where)}</span></span>
+        <span class="pname">${esc(p.name)}・${esc(p.line)}</span>
+        <span class="peff">${esc(ROLES[p.role].eff)}</span></button>`;
+    }).join("");
+
+    // 手札
+    document.getElementById("hand-note").innerHTML = `<span class="${S.hand.length > HAND_MAX ? "over5" : ""}">${S.hand.length} / ${HAND_MAX}枚</span>`;
+    document.getElementById("hand").innerHTML = S.hand.length ? S.hand.map(c => `<span class="mat ${matClass(c.m)}">${c.m}</span>`).join("") : `<span class="sec-note">手札はありません</span>`;
+
+    document.getElementById("buy-left").textContent = `買う あと${S.buysLeft}枚`;
+    const adv = document.getElementById("advance");
+    adv.disabled = !!S.over;
+    const shipCount = S.brew.filter(b => b.filled + planned(b.id) >= SAKE[b.id].gauge).length;
+    adv.textContent = S.over ? "ゲーム終了" : shipCount ? `仕込みを進めて ${shipCount}本出荷する` : "人を置いて、仕込みを進める";
+  }
+
+  // ---------- シート ----------
+  let openName = null;
+  function closeSheet() { openName = null; document.getElementById("sheet-root").innerHTML = ""; }
+  function sheet(title, body, closable = true) {
+    document.getElementById("sheet-root").innerHTML = `
+      <div class="scrim" ${closable ? 'data-act="scrim"' : ""}>
+        <div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+          <div class="sheet-head"><h2 class="sheet-title">${esc(title)}</h2>${closable ? '<button class="text-btn" data-act="close">閉じる</button>' : ""}</div>
+          <div class="sheet-body">${body}</div>
+        </div>
+      </div>`;
+    const first = document.querySelector(".sheet button");
+    if (first) first.focus({ preventScroll: true });
+  }
+  function openSheet(name) {
+    openName = name;
+    if (name === "market") {
+      const inBrew = new Set(S.brew.map(b => b.id));
+      const body = `<div class="sec-note">自分の蔵 ${S.brew.length} / ${BREW_MAX}。必要な素材は手札から払います。</div>` + SAKES.map(s => {
+        const plan = payPlan(s); const busy = inBrew.has(s.id); const rate = decayRate(s.id);
+        const ok = !busy && !plan.miss.length && S.brew.length < BREW_MAX;
+        return `<div class="row-card">
+          <div class="line"><div style="min-width:0"><div class="sake-name">${esc(s.name)}</div><div class="tags">${s.tags.map(t => `<span class="tag">${t}</span>`).join("")}<span class="tag">得意: ${s.spec}</span></div></div>
+            <div class="price"><div class="v">${Math.floor(s.rev * rate)}両</div><div class="k">${s.gauge}マス${rate < 1 ? ` ・ ${Math.round(rate * 100)}%` : ""}</div></div></div>
+          <div class="need">素材: ${needText(s)}${plan.miss.length && !busy ? ` ・ <span class="miss">足りない: ${plan.miss.join("・")}</span>` : ""}${plan.kojiSaved ? " ・ 麹屋で麹1枚不要" : ""}</div>
+          <div class="say">${esc(s.say)}</div>
+          <div class="line"><span class="sec-note">${busy ? "仕込み中" : ""}</span><button class="btn ${ok ? "solid" : ""}" data-act="start" data-sake="${s.id}" ${ok ? "" : "disabled"}>仕込む</button></div>
+        </div>`;
+      }).join("");
+      sheet("酒の場", body);
+    }
+    if (name === "recruit") {
+      const body = `<div class="sec-note">雇った人は手放せず、最後まで毎ターン1両の給料がかかります。</div>` + S.field.map(c => {
+        const r = ROLES[c.role];
+        return `<div class="row-card"><div class="line"><div><div class="role">${esc(c.role)}</div><div class="pname">${esc(c.name)}・${esc(c.line)}</div></div><div class="price"><div class="v">${r.fee}両</div><div class="k">契約金</div></div></div>
+          <div class="need">${esc(r.eff)}</div>
+          <div class="line"><span></span><button class="btn solid" data-act="hire" data-cid="${c.id}" ${S.money < r.fee ? "disabled" : ""}>雇う</button></div></div>`;
+      }).join("") + `<div class="line" style="display:flex;justify-content:space-between;align-items:center"><span class="sec-note">3枚を全部入れ替える（1ターン1回）</span><button class="btn" data-act="refresh" ${S.refreshed || S.money < 1 ? "disabled" : ""}>1両で入れ替える</button></div>`;
+      sheet("求人の場", body);
+    }
+    if (name === "shop") {
+      const body = `<div class="sec-note">1ターン2枚まで ・ あと${S.buysLeft}枚${S.freeBuy ? " ・ 帳場がいるので次の1枚は無料" : ""}${S.riceUp ? " ・ 米は値上がり中（2倍）" : ""}</div>` +
+        [...RICES, "麹", "酵母"].map(m => `<div class="row-card"><div class="line"><span class="mat ${matClass(m)}">${m}</span><span class="price"><span class="v">${S.freeBuy ? 0 : priceOf(m)}両</span></span><button class="btn solid" data-act="buy" data-m="${m}" ${S.buysLeft <= 0 || S.money < (S.freeBuy ? 0 : priceOf(m)) ? "disabled" : ""}>買う</button></div></div>`).join("");
+      sheet("取引先", body);
+    }
+    if (name === "ship") {
+      const items = S.lastShip.length ? S.lastShip.map(r => `<div class="ship-item"><div class="sec-note">出荷しました</div><div class="ship-name">${esc(r.s.name)}</div><div class="ship-value">+${r.v}両</div><div class="ship-calc">${esc(r.calc)}</div><div class="ship-say">${esc(r.s.say)}</div></div>`).join("") : `<div class="row-card">このターンに出荷できる酒はありませんでした。</div>`;
+      sheet(`${S.turn}ターン目の出荷`, items + `<div class="row-card"><div class="line"><span>給料（${S.hired.length}人）</span><span class="price"><span class="v">−${salaryTotal()}両</span></span></div></div><button class="primary" data-act="aftership">給料を払って次へ</button>`, false);
+    }
+    if (name === "discard") {
+      const need = S.hand.length - HAND_MAX;
+      const body = `<div class="sec-note">手札は5枚までです。捨てる札を${need}枚選んでください。</div><div class="hand">` + S.hand.map(c => `<button class="mat ${matClass(c.m)}" style="${S.discardSel.includes(c.id) ? "outline:2px solid var(--bengara)" : ""}" data-act="dsel" data-id="${c.id}">${c.m}</button>`).join("") + `</div><button class="primary" data-act="discard">捨てて給料を払う</button>`;
+      sheet("手札を減らす", body, false);
+    }
+    if (name === "end") {
+      const o = S.over;
+      const counts = {}; S.shippedLog.forEach(x => counts[x.id] = (counts[x.id] || 0) + 1);
+      const zukan = Object.keys(counts).map(id => `<div class="row-card"><div class="line"><div class="sake-name">${esc(SAKE[id].name)}</div><span class="sec-note">${counts[id]}回出荷</span></div><div class="say">${esc(SAKE[id].say)}</div></div>`).join("") || `<div class="row-card">出荷した酒はありません。</div>`;
+      const rank = RANKS.find(([min]) => S.money >= min)[1];
+      const names = Object.keys(counts).map(id => SAKE[id].name).join("、");
+      const share = o.kind === "finish" ? `岩瀬酒造 蔵元カードゲーム（試作）で20ターン。所持金${S.money}両、ランク${rank}。造った酒: ${names || "なし"}` : `岩瀬酒造 蔵元カードゲーム（試作）で${o.turn}ターン目に廃業。造った酒: ${names || "なし"}`;
+      const head = o.kind === "finish"
+        ? `<div class="row-card"><div class="sec-note">20ターンを終えました</div><div class="end-big">${S.money}両</div><div><span class="rank">ランク ${rank}</span> <span class="sec-note">（基準は仮）</span></div></div>`
+        : `<div class="row-card"><div class="end-big" style="color:var(--bengara)">${o.turn}ターン目で廃業</div><div class="sec-note">給料を払えませんでした。</div></div>`;
+      sheet("ゲーム終了", head + `<h3 class="sec-title">造った酒</h3>${zukan}
+        <div class="row-card"><div>ここで造った酒は、蔵元直送のショップで買えます。</div><a class="btn solid" style="text-decoration:none;text-align:center" href="${SHOP_URL}" target="_blank" rel="noopener">岩の井 蔵元直送ショップを開く</a><div class="sec-note">20歳未満の者の飲酒は法律で禁止されています。ゲームの中では購入を扱いません。</div></div>
+        <label class="sec-note" for="share-text">結果を共有する文章</label><textarea id="share-text" class="share" readonly>${esc(share)}</textarea>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn solid" data-act="copy">文章ごとコピー</button><button class="btn" data-act="restart">もう一度遊ぶ</button></div>`, false);
+    }
+    if (name === "help") {
+      sheet("遊び方", `<div class="row-card"><div>20ターン後の所持金が点数です。給料を払えなくなったら廃業です。</div></div>
+        <ol class="steps-list"><li>イベント: 毎ターン最初に1枚、すぐ効く</li><li>引く: 山札から2枚</li><li>雇う: 求人の場から（契約金）</li><li>買う: 取引先から2枚まで</li><li>仕込む: 酒の場から、素材を払って自分の蔵へ（3枚まで）</li><li>置く: 人をタップ、酒の札をタップ</li><li>出荷: マスが全部埋まった酒が売れる</li><li>給料: 1人1両</li></ol>
+        <dl class="dl"><dt>蔵人</dt><dd>どの酒でも1マス</dd><dt>酛屋・船頭・蔵守</dt><dd>得意な酒で2マス、ほかは0</dd><dt>能力を持つ人</dt><dd>置かなくても効く</dd><dt>値下がり</dt><dd>同じ酒の2回目は80%、3回目から60%</dd></dl>
+        <div class="sec-note">この試作では、雇う・買う・仕込むを好きな順にできます。置いた人は次のターンもそのまま残ります。</div>`);
+    }
+    if (name === "newgame") {
+      sheet("最初から遊ぶ", `<div class="row-card"><div>所持金12両、蔵人2人の1ターン目から始めます。見本の7ターン目は消えます。</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn solid" data-act="restart">新しい山札で始める</button><button class="btn" data-act="sample">見本の7ターン目に戻す</button></div></div>`);
+    }
+  }
+
+  // ---------- 入力 ----------
+  document.addEventListener("click", e => {
+    const el = e.target.closest("[data-act]"); if (!el) return;
+    const a = el.dataset.act;
+    if (a === "scrim" && e.target !== el) return;
+    switch (a) {
+      case "open": if (!S.over) openSheet(el.dataset.sheet); break;
+      case "close": case "scrim": closeSheet(); break;
+      case "advance": advance(); break;
+      case "aftership": afterShip(); break;
+      case "select": selectPerson(el.dataset.pid); break;
+      case "place": placeOn(el.dataset.sake); break;
+      case "unplace": e.stopPropagation(); unplace(el.dataset.pid); break;
+      case "quit": e.stopPropagation(); quitSake(el.dataset.sake); break;
+      case "hire": hire(Number(el.dataset.cid)); break;
+      case "refresh": refreshField(); break;
+      case "buy": buy(el.dataset.m); break;
+      case "start": startSake(el.dataset.sake); break;
+      case "resolve": resolve(el.dataset.k, el.dataset.a); break;
+      case "dsel": { const id = Number(el.dataset.id); const i = S.discardSel.indexOf(id); if (i >= 0) S.discardSel.splice(i, 1); else if (S.discardSel.length < S.hand.length - HAND_MAX) S.discardSel.push(id); openSheet("discard"); break; }
+      case "discard": doDiscard(); break;
+      case "restart": closeSheet(); newGame(Math.floor(Math.random() * 1e9)); render(); toast("新しいゲームを始めました。"); break;
+      case "sample": closeSheet(); sampleGame(); render(); break;
+      case "copy": {
+        const ta = document.getElementById("share-text");
+        const done = () => toast("コピーしました。");
+        try { navigator.clipboard.writeText(ta.value).then(done, () => { ta.select(); toast("文章を選択しました。長押しでコピーしてください。"); }); }
+        catch { ta.select(); toast("文章を選択しました。長押しでコピーしてください。"); }
+        break;
+      }
+    }
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && openName && !["ship", "discard", "end"].includes(openName)) closeSheet();
+    if ((e.key === "Enter" || e.key === " ") && e.target.matches('[data-act="place"]')) { e.preventDefault(); placeOn(e.target.dataset.sake); }
+  });
+
+  sampleGame();
+  render();
+})();
+</script>
