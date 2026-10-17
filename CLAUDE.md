@@ -16,8 +16,9 @@
 
 ## 蔵元カードゲームのモック
 
-お題が岩瀬酒造の岩の井に変わってから作った、1 人用カードゲームの盤面モックが `mocks/kuramoto/` にある。このギフトアプリとは別物で、pnpm workspace にも入っていない。
+お題が岩瀬酒造の岩の井に変わってから作った、1 人用カードゲームの設計書と盤面モックが `mocks/kuramoto/` にある。このギフトアプリとは別物で、pnpm workspace にも入っていない。
 
+- `design.md` ゲームの設計書。ルールとカード一覧はこれに従う。
 - `kuramoto-phaser.html` いまの版。Phaser 3.80.1 で描く横画面の盤面。HTML 1 枚で動く。
 - `kuramoto-board.html` と `kuramoto-mock.html` 前の 2 つの版。
 - `sim.py` ルールの数字を確かめるシミュレーター。`python3 sim.py` で動く。
