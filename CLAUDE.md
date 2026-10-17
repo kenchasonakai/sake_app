@@ -14,6 +14,15 @@
 8. [docs/design-discussion.md](docs/design-discussion.md) 残っている UI の論点
 9. [README.md](README.md) セットアップとコマンド
 
+## 蔵元カードゲームのモック
+
+お題が岩瀬酒造の岩の井に変わってから作った、1 人用カードゲームの盤面モックが `mocks/kuramoto/` にある。このギフトアプリとは別物で、pnpm workspace にも入っていない。
+
+- `kuramoto-phaser.html` いまの版。Phaser 3.80.1 で描く横画面の盤面。HTML 1 枚で動く。
+- `kuramoto-board.html` と `kuramoto-mock.html` 前の 2 つの版。
+- `sim.py` ルールの数字を確かめるシミュレーター。`python3 sim.py` で動く。
+- 開き方、モックで決めたルール、シミュレーターで分かったことは [mocks/kuramoto/README.md](mocks/kuramoto/README.md) にある。
+
 ## 技術
 
 - pnpm workspace と Turborepo。Node 22.18 以上。Bun は不可（cf CLI が未対応）。
